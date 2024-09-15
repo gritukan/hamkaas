@@ -216,79 +216,141 @@ FOR_ALL_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
 template <class T>
-__global__ void ComplexHadamardProductKernel(
+__global__ void ComplexHadamardProductBroadcastKernel(
     const T* lhs,
     const T* rhs,
     T* output,
-    int64_t size)
+    int64_t* lhsShape,
+    int64_t* rhsShape,
+    int64_t dimensions,
+    int64_t outputSize)
 {
+    int64_t indices[MaxDimensions];
+
     int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int64_t index = threadIndex; index < size; index += gridDim.x * blockDim.x) {
-        output[2 * index] = lhs[2 * index] * rhs[2 * index] - lhs[2 * index + 1] * rhs[2 * index + 1];
-        output[2 * index + 1] = lhs[2 * index] * rhs[2 * index + 1] + lhs[2 * index + 1] * rhs[2 * index];
+    for (int64_t lhsIndex = threadIndex; lhsIndex < outputSize / 2; lhsIndex += gridDim.x * blockDim.x) {
+        int64_t lhsIndexCopy = lhsIndex;
+
+        for (int64_t i = dimensions - 2; i >= 0; --i) {
+            indices[i] = lhsIndexCopy % lhsShape[i];
+            lhsIndexCopy /= lhsShape[i];
+        }
+
+        int64_t rhsIndex = 0;
+        for (int64_t i = 0; i + 1 < dimensions; ++i) {
+            int64_t index = rhsShape[i] == 1 ? 0 : indices[i];
+            rhsIndex = rhsIndex * rhsShape[i] + index;
+        }
+
+        output[2 * lhsIndex] = lhs[2 * lhsIndex] * rhs[2 * rhsIndex] - lhs[2 * lhsIndex + 1] * rhs[2 * rhsIndex + 1];
+        output[2 * lhsIndex + 1] = lhs[2 * lhsIndex] * rhs[2 * rhsIndex + 1] + lhs[2 * lhsIndex + 1] * rhs[2 * rhsIndex];
     }
 }
 
 template <class T>
-void ComplexHadamardProduct(
+void ComplexHadamardProductBroadcast(
     cudaStream_t stream,
     const T* lhs,
     const T* rhs,
     T* output,
-    int64_t size)
+    int64_t* lhsShape,
+    int64_t* rhsShape,
+    int64_t dimensions,
+    int64_t outputSize)
 {
     constexpr int64_t ThreadsPerBlock = 256;
-    int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
+    int64_t blocks = (outputSize / 2 + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    ComplexHadamardProductKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(lhs, rhs, output, size);
+    ComplexHadamardProductBroadcastKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
+        lhs,
+        rhs,
+        output,
+        lhsShape,
+        rhsShape,
+        dimensions,
+        outputSize);
 }
 
 #define INSTANTIATE(T) \
-    template void ComplexHadamardProduct( \
+    template void ComplexHadamardProductBroadcast( \
         cudaStream_t stream, \
         const T* lhs, \
         const T* rhs, \
         T* output, \
-        int64_t size);
+        int64_t* lhsShape, \
+        int64_t* rhsShape, \
+        int64_t dimensions, \
+        int64_t outputSize);
 FOR_ALL_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
 template <class T>
-__global__ void HadamardProductKernel(
+__global__ void HadamardProductBroadcastKernel(
     const T* lhs,
     const T* rhs,
     T* output,
-    int64_t size)
+    int64_t* lhsShape,
+    int64_t* rhsShape,
+    int64_t dimensions,
+    int64_t outputSize)
 {
+    int64_t indices[MaxDimensions];
+
     int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int64_t index = threadIndex; index < size; index += gridDim.x * blockDim.x) {
-        output[index] = lhs[index] * rhs[index];
+    for (int64_t lhsIndex = threadIndex; lhsIndex < outputSize; lhsIndex += gridDim.x * blockDim.x) {
+        int64_t lhsIndexCopy = lhsIndex;
+
+        for (int64_t i = dimensions - 1; i >= 0; --i) {
+            indices[i] = lhsIndexCopy % lhsShape[i];
+            lhsIndexCopy /= lhsShape[i];
+        }
+
+        int64_t rhsIndex = 0;
+        for (int64_t i = 0; i < dimensions; ++i) {
+            int64_t index = rhsShape[i] == 1 ? 0 : indices[i];
+            rhsIndex = rhsIndex * rhsShape[i] + index;
+        }
+
+        output[lhsIndex] = lhs[lhsIndex] * rhs[rhsIndex];
     }
 }
 
 template <class T>
-void HadamardProduct(
+void HadamardProductBroadcast(
     cudaStream_t stream,
     const T* lhs,
     const T* rhs,
     T* output,
-    int64_t size)
+    int64_t* lhsShape,
+    int64_t* rhsShape,
+    int64_t dimensions,
+    int64_t outputSize)
 {
     constexpr int64_t ThreadsPerBlock = 256;
-    int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
+    int64_t blocks = (outputSize + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    HadamardProductKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(lhs, rhs, output, size);
+    HadamardProductBroadcastKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
+        lhs,
+        rhs,
+        output,
+        lhsShape,
+        rhsShape,
+        dimensions,
+        outputSize);
 }
 
 #define INSTANTIATE(T) \
-    template void HadamardProduct( \
+    template void HadamardProductBroadcast( \
         cudaStream_t stream, \
         const T* lhs, \
         const T* rhs, \
         T* output, \
-        int64_t size);
+        int64_t* lhsShape, \
+        int64_t* rhsShape, \
+        int64_t dimensions, \
+        int64_t outputSize);
 FOR_ALL_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
@@ -297,64 +359,71 @@ __global__ void SoftmaxKernel(
     const T* input,
     T* output,
     int64_t* prefixSizePtr,
-    int64_t size)
+    int64_t size,
+    int64_t vectorSize)
 {
-    assert(blockIdx.x == 0);
-
     __shared__ T buffer[MaxThreadsPerBlock];
 
     int64_t prefixSize = *prefixSizePtr;
-    if (threadIdx.x < prefixSize) {
-        T max = input[threadIdx.x];
-        for (int index = threadIdx.x; index < prefixSize; index += prefixSize) {
-            max = max > input[index] ? max : input[index];
+
+    for (int64_t vectorIndex = blockIdx.x; vectorIndex < size / vectorSize; vectorIndex += gridDim.x) {
+        const T* in = input + vectorIndex * vectorSize;
+        T* out = output + vectorIndex * vectorSize;
+
+        if (threadIdx.x < prefixSize) {
+            T max = in[threadIdx.x];
+            for (int64_t index = threadIdx.x; index < prefixSize; index += blockDim.x) {
+                max = max > in[index] ? max : in[index];
+            }
+
+            buffer[threadIdx.x] = max;
         }
 
-        buffer[threadIdx.x] = max;
-    }
+        __syncthreads();
 
-    __syncthreads();
+        if (threadIdx.x == 0) {
+            T max = buffer[0];
+            for (int64_t i = 1; i < prefixSize && i < blockDim.x; ++i) {
+                max = max > buffer[i] ? max : buffer[i];
+            }
 
-    if (threadIdx.x == 0) {
+            buffer[threadIdx.x] = max;
+        }
+
+        __syncthreads();
+
         T max = buffer[0];
-        for (int i = 1; i < prefixSize && i < blockDim.x; ++i) {
-            max = max > buffer[i] ? max : buffer[i];
-        }
-
-        buffer[threadIdx.x] = max;
-    }
-
-    __syncthreads();
-
-    T max = buffer[0];
-    T sum = 0;
-    for (int index = threadIdx.x; index < prefixSize; index += blockDim.x) {
-        sum += exp(input[index] - max);
-    }
-
-    buffer[threadIdx.x] = sum;
-
-    __syncthreads();
-
-    if (threadIdx.x == 0) {
         T sum = 0;
-        for (int i = 0; i < prefixSize && i < blockDim.x; ++i) {
-            sum += buffer[i];
+        for (int64_t index = threadIdx.x; index < prefixSize; index += blockDim.x) {
+            sum += exp(in[index] - max);
         }
 
         buffer[threadIdx.x] = sum;
-    }
 
-    __syncthreads();
+        __syncthreads();
 
-    sum = buffer[0];
+        if (threadIdx.x == 0) {
+            T sum = 0;
+            for (int64_t i = 0; i < prefixSize && i < blockDim.x; ++i) {
+                sum += buffer[i];
+            }
 
-    for (int index = threadIdx.x; index < size; index += blockDim.x) {
-        if (index < prefixSize) {
-            output[index] = exp(input[index] - max) / sum;
-        } else {
-            output[index] = input[index];
+            buffer[threadIdx.x] = sum;
         }
+
+        __syncthreads();
+
+        sum = buffer[0];
+
+        for (int64_t index = threadIdx.x; index < vectorSize; index += blockDim.x) {
+            if (index < prefixSize) {
+                out[index] = exp(in[index] - max) / sum;
+            } else {
+                out[index] = in[index];
+            }
+        }
+
+        __syncthreads();
     }
 }
 
@@ -364,10 +433,18 @@ void SlicedSoftmax(
     const T* input,
     T* output,
     int64_t* prefixSizePtr,
-    int64_t size)
+    int64_t size,
+    int64_t vectorSize)
 {
     constexpr int64_t ThreadsPerBlock = 256;
-    SoftmaxKernel<T><<<1, ThreadsPerBlock, 0, stream>>>(input, output, prefixSizePtr, size);
+
+    int64_t blocks = std::min(MaxBlockCount, size / vectorSize);
+    SoftmaxKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
+        input,
+        output,
+        prefixSizePtr,
+        size,
+        vectorSize);
 }
 
 #define INSTANTIATE(T) \
@@ -376,7 +453,8 @@ void SlicedSoftmax(
         const T* input, \
         T* output, \
         int64_t* prefixSizePtr, \
-        int64_t size);
+        int64_t size, \
+        int64_t vectorSize);
 FOR_ALL_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 

@@ -428,29 +428,37 @@ class TestCompilerCpu:
 
             lhs_tensor = torch.rand(lhs_shape, dtype=lhs_dtype)
             rhs_tensor = torch.rand(rhs_shape, dtype=rhs_dtype)
-            expected = torch.zeros_like(lhs_tensor)
-            for i in range(len(lhs_tensor)):
-                expected[i][0] = lhs_tensor[i][0] * rhs_tensor[i][0] - lhs_tensor[i][1] * rhs_tensor[i][1]
-                expected[i][1] = lhs_tensor[i][0] * rhs_tensor[i][1] + lhs_tensor[i][1] * rhs_tensor[i][0]
 
             actual = model.evaluate({"lhs": lhs_tensor, "rhs": rhs_tensor})
+
+            lhs_tensor = torch.complex(lhs_tensor[..., 0], lhs_tensor[..., 1])
+            rhs_tensor = torch.complex(rhs_tensor[..., 0], rhs_tensor[..., 1])
+
+            expected = lhs_tensor * rhs_tensor
+            expected = torch.cat((expected.real.unsqueeze(-1), expected.imag.unsqueeze(-1)), dim=-1)
+
             assert torch.allclose(expected, actual)
 
         # Simple Hadamard product.
         do_test([5, 2], [5, 2], dtype)
         do_test([1, 2], [1, 2], dtype)
 
+        # Broadcast.
+        do_test([5, 2], [1, 2], dtype)
+        do_test([4, 4, 2], [4, 1, 2], dtype)
+        do_test([5, 6, 2], [1, 6, 2], dtype)
+
         # Wrong shapes.
         with pytest.raises(Exception):
-            do_test([2], [2], dtype)
-        with pytest.raises(Exception):
             do_test([2, 3], [2, 3], dtype)
+        with pytest.raises(Exception):
+            do_test([5, 5, 2], [5, 5, 1], dtype)
         with pytest.raises(Exception):
             do_test([2, 2], [2, 3], dtype)
         with pytest.raises(Exception):
             do_test([2, 3], [2, 2], dtype)
         with pytest.raises(Exception):
-            do_test([5, 5, 2], [5, 5, 2], dtype)
+            do_test([5, 5, 2], [5, 5, 1], dtype)
 
         # Incompatible types.
         with pytest.raises(Exception):
@@ -484,6 +492,12 @@ class TestCompilerCpu:
         do_test([1, 2], [1, 2], dtype)
         do_test([1, 1, 1], [1, 1, 1], dtype)
         do_test([5, 7, 2], [5, 7, 2], dtype)
+
+        # Broadcast.
+        do_test([5], [1], dtype)
+        do_test([5, 2], [1, 2], dtype)
+        do_test([5, 5, 5], [5, 1, 5], dtype)
+        do_test([2, 3, 4], [1, 3, 1], dtype)
 
         # Incompatible shapes.
         with pytest.raises(Exception):
@@ -598,8 +612,8 @@ class TestCompilerCpu:
             model = self.compile(input.sliced_softmax(size))
 
             input_tensor = torch.rand(shape, dtype=dtype)
-            softmax = torch.nn.Softmax(dim=0)
-            expected = torch.cat((softmax(input_tensor[:size]), input_tensor[size:]))
+            softmax = torch.nn.Softmax(dim=-1)
+            expected = torch.cat((softmax(input_tensor[..., :size]), input_tensor[..., size:]), dim=-1)
 
             result = model.evaluate({"input": input_tensor})
             assert torch.allclose(result, expected)
@@ -607,11 +621,9 @@ class TestCompilerCpu:
         do_test([5], dtype, 3)
         do_test([5], dtype, 0)
         do_test([5], dtype, 5)
+        do_test([3, 4], dtype, 2)
+        do_test([1, 2, 3], dtype, 2)
 
-        # Incompatible shape.
-        with pytest.raises(Exception):
-            do_test([3, 3], dtype, 2)
-        
         # Wrong index.
         with pytest.raises(Exception):
             do_test([5], dtype, 6)

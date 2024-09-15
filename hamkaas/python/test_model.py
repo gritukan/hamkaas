@@ -1,15 +1,13 @@
 import hamkaas
 import torch
 
-hamkaas.initialize("../cpp/libhamkaas.so")
+plugin = hamkaas.HamKaasPlugin("../cpp/libhamkaas.so")
 
-in1_ = hamkaas.ConstantTensor(torch.rand(3, 2, 10))
-in2_ = hamkaas.ConstantTensor(torch.rand(3, 10, 5))
-out = hamkaas.MulNode(in1_, in2_)
-model = hamkaas.compile_model(out, use_gpu=True)
+in1_ = hamkaas.ConstantTensor(torch.tensor([[1.0, 2.0], [3.0, 4.0]]))
+out = in1_.sliced_softmax(2)
+model = plugin.compile_model(out, use_gpu=True)
 
 print(model.evaluate(inputs={}))
-print(out.eval_slow({}, {}, {}))
 #print(model.evaluate(inputs={}))
 #print(model.evaluate(inputs={}))
 

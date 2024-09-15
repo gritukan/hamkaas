@@ -420,12 +420,13 @@ class ComplexHadamardProductNode(HamKaasNode):
 
         if lhs.get_type() != rhs.get_type():
             raise ValueError("Mixed-precision operations are not supported")
-        if len(lhs.get_shape()) != 2 or len(rhs.get_shape()) != 2:
-            raise ValueError("Only vectors are supported for complex dot product")
-        if lhs.get_shape()[1] != 2 or rhs.get_shape()[1] != 2:
+        if len(lhs.get_shape()) != len(rhs.get_shape()):
+            raise ValueError("Shapes do not match for complex Hadamard product")
+        if lhs.get_shape()[-1] != 2 or rhs.get_shape()[-1] != 2:
             raise ValueError("Complex dot product requires complex vectors")
-        if lhs.get_shape()[0] != rhs.get_shape()[0]:
-            raise ValueError(f"Shapes do not match for complex Hadamard product: {lhs.get_shape()} vs {rhs.get_shape()}")
+        for i in range(len(lhs.get_shape()) - 1):
+            if lhs.get_shape()[i] != rhs.get_shape()[i] and rhs.get_shape()[i] != 1:
+                raise ValueError("Shapes do not match for complex Hadamard product")
 
         self.lhs = lhs
         self.rhs = rhs
@@ -454,6 +455,9 @@ class HadamardProductNode(HamKaasNode):
             raise ValueError("Mixed-precision operations are not supported")
         if len(lhs.get_shape()) != len(rhs.get_shape()):
             raise ValueError("Shapes do not match for Hadamard product")
+        for i in range(len(lhs.get_shape())):
+            if lhs.get_shape()[i] != rhs.get_shape()[i] and rhs.get_shape()[i] != 1:
+                raise ValueError("Shapes do not match for Hadamard product")
 
         self.lhs = lhs
         self.rhs = rhs
@@ -549,7 +553,7 @@ class SlicedSoftmaxNode(HamKaasNode):
 
     def get_type(self) -> torch.dtype:
         return self.input.get_type()
-    
+
     def get_shape(self) -> List[int]:
         return self.input.get_shape()
     

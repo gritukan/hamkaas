@@ -12,7 +12,7 @@ void SumTensorsBroadcast(
     const T* rhs,
     T* output,
     int64_t* lhsShape,
-    int64_t* rhsShapeMultiplier,
+    int64_t* rhsShape,
     int64_t dimensions,
     int64_t outputSize);
 
@@ -40,20 +40,26 @@ void RMSNorm(
     T epsilon);
 
 template <class T>
-void ComplexHadamardProduct(
+void ComplexHadamardProductBroadcast(
     cudaStream_t stream,
     const T* lhs,
     const T* rhs,
     T* output,
-    int64_t size);
+    int64_t* lhsShape,
+    int64_t* rhsShape,
+    int64_t dimensions,
+    int64_t outputSize);
 
 template <class T>
-void HadamardProduct(
+void HadamardProductBroadcast(
     cudaStream_t stream,
     const T* lhs,
     const T* rhs,
     T* output,
-    int64_t size);
+    int64_t* lhsShape,
+    int64_t* rhsShape,
+    int64_t dimensions,
+    int64_t outputSize);
 
 template <class T>
 void SlicedSoftmax(
@@ -61,7 +67,8 @@ void SlicedSoftmax(
     const T* input,
     T* output,
     int64_t* prefixSizePtr,
-    int64_t size);
+    int64_t size,
+    int64_t vectorSize);
 
 template <class T>
 void ReplaceSlice(

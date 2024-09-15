@@ -97,7 +97,8 @@ void TModel::Evaluate(
     }
 
     if (UseGpu_) {
-        //CUDA_CHECK_ERROR(cudaGraphLaunch(GraphExec_, 0));
+        CUDA_CHECK_ERROR(cudaGraphLaunch(GraphExec_, 0));
+        /*
         for (auto* node : EvaluationOrder_) {
             node->EvaluateGpu(TEvaluationContext{
                 .Bootstrap = Bootstrap_,
@@ -105,6 +106,7 @@ void TModel::Evaluate(
                 .Stream = Stream_,
             });
         }
+        */
     } else {
         for (auto* node : EvaluationOrder_) {
             node->EvaluateCpu();
@@ -195,7 +197,7 @@ void TModel::AllocateMemory()
         }
     }
 
-    MemoryPool_ = Device_->DeviceMalloc(2 * allocator.GetWorkingSetSize());
+    MemoryPool_ = Device_->DeviceMalloc(allocator.GetWorkingSetSize());
 
     for (auto* node : InputNodes_) {
         node->SetOutput(MemoryPool_ + outputMemory[node]);

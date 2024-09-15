@@ -964,22 +964,10 @@ TTensorMeta TReshapeNode::CalculateMeta(const TTensorMeta& input, const std::vec
 }
 
 TComplexHadamardProductNode::TComplexHadamardProductNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
-    : TNodeBase(lhs->GetMeta())
+    : TNodeBase(CalculateMeta(lhs->GetMeta(), rhs->GetMeta()))
     , Lhs_(std::move(lhs))
     , Rhs_(std::move(rhs))
 {
-    if (Lhs_->GetValueType() != Rhs_->GetValueType()) {
-        THROW("Different value types", VAR(Lhs_->GetValueType()), VAR(Rhs_->GetValueType()));
-    }
-    if (Lhs_->GetDimensions() != 2 || Rhs_->GetDimensions() != 2) {
-        THROW("Hadamard product is supported for complex vectors only", VAR(Lhs_->GetDimensions()), VAR(Rhs_->GetDimensions()));
-    }
-    if (Lhs_->GetShape()[1] != 2 || Rhs_->GetShape()[1] != 2) {
-        THROW("Hadamard product is supported for complex vectors only", VAR(Lhs_->GetShape()[1]), VAR(Rhs_->GetShape()[1]));
-    }
-    if (Lhs_->GetShape()[0] != Rhs_->GetShape()[0]) {
-        THROW("Different shapes", VAR(Lhs_->GetShape()[0]), VAR(Rhs_->GetShape()[0]));
-    }
 }
 
 const TNodeBasePtr& TComplexHadamardProductNode::GetLhs() const
@@ -997,6 +985,23 @@ std::vector<TNodeBase*> TComplexHadamardProductNode::GetInputs() const
     return {Lhs_.get(), Rhs_.get()};
 }
 
+int64_t TComplexHadamardProductNode::GetBufferSize() const
+{
+    return 2 * GetDimensions() * sizeof(int64_t);
+}
+
+void TComplexHadamardProductNode::SetBuffer(char* buffer)
+{
+    LhsShape_ = reinterpret_cast<int64_t*>(buffer);
+    RhsShape_ = LhsShape_ + GetDimensions();
+}
+
+void TComplexHadamardProductNode::Initialize(IDevice* device)
+{
+    device->CopyToDevice(LhsShape_, Lhs_->GetShape().data(), GetDimensions() * sizeof(int64_t));
+    device->CopyToDevice(RhsShape_, Rhs_->GetShape().data(), GetDimensions() * sizeof(int64_t));
+}
+
 void TComplexHadamardProductNode::EvaluateCpu()
 {
     switch (GetValueType()) {
@@ -1005,15 +1010,6 @@ void TComplexHadamardProductNode::EvaluateCpu()
         return;
     case EValueType::Float64:
         DoEvaluateCpu<double>();
-        return;
-    case EValueType::Int16:
-        DoEvaluateCpu<int16_t>();
-        return;
-    case EValueType::Int32:
-        DoEvaluateCpu<int32_t>();
-        return;
-    case EValueType::Int64:
-        DoEvaluateCpu<int64_t>();
         return;
     default:
         THROW("CPU inference does not support this value type", VAR(GetValueType()));
@@ -1039,45 +1035,71 @@ void TComplexHadamardProductNode::DoEvaluateCpu()
     auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
-    for (int64_t index = 0; index < Lhs_->GetShape()[0]; ++index) {
-        int64_t lhsIndex = index * 2;
-        int64_t rhsIndex = index * 2;
+    for (int64_t index = 0; index < Lhs_->GetElementCount() / 2; ++index) {
+        std::vector<int64_t> rhsIndices(Rhs_->GetDimensions() - 1);
 
-        auto real = lhs[lhsIndex] * rhs[rhsIndex] - lhs[lhsIndex + 1] * rhs[rhsIndex + 1];
-        auto imag = lhs[lhsIndex] * rhs[rhsIndex + 1] + lhs[lhsIndex + 1] * rhs[rhsIndex];
+        int64_t indexCopy = index;
+        for (int64_t index = Rhs_->GetDimensions() - 2; index >= 0; --index) {
+            rhsIndices[index] = indexCopy % Lhs_->GetShape()[index];
+            indexCopy /= Lhs_->GetShape()[index];
+            if (rhsIndices[index] >= Rhs_->GetShape()[index]) {
+                assert(Rhs_->GetShape()[index] == 1);
+                rhsIndices[index] = 0;
+            }
+        }
 
-        output[lhsIndex] = real;
-        output[lhsIndex + 1] = imag;
+        int64_t rhsIndex = 0;
+        for (int64_t index = 0; index < Rhs_->GetDimensions() - 1; ++index) {
+            rhsIndex = rhsIndex * Rhs_->GetShape()[index] + rhsIndices[index];
+        }
+
+        output[2 * index] = lhs[2 * index] * rhs[2 * rhsIndex] - lhs[2 * index + 1] * rhs[2 * rhsIndex + 1];
+        output[2 * index + 1] = lhs[2 * index] * rhs[2 * rhsIndex + 1] + lhs[2 * index + 1] * rhs[2 * rhsIndex];
     }
 }
 
 template <typename T>
 void TComplexHadamardProductNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
-    auto* lhs = reinterpret_cast<const T*>(Lhs_->GetOutput());
-    auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
+    ComplexHadamardProductBroadcast(
+        context.Stream,
+        reinterpret_cast<const T*>(Lhs_->GetOutput()),
+        reinterpret_cast<const T*>(Rhs_->GetOutput()),
+        reinterpret_cast<T*>(GetOutput()),
+        LhsShape_,
+        RhsShape_,
+        GetDimensions(),
+        GetElementCount());
+}
 
-    ComplexHadamardProduct(context.Stream, lhs, rhs, output, Lhs_->GetShape()[0]);
+TTensorMeta TComplexHadamardProductNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
+{
+    if (lhs.ValueType != rhs.ValueType) {
+        THROW("Different value types", VAR(lhs.ValueType), VAR(rhs.ValueType));
+    }
+
+    if (lhs.Shape.size() != rhs.Shape.size()) {
+        THROW("Different number of dimensions", VAR(lhs.Shape.size()), VAR(rhs.Shape.size()));
+    }
+
+    if (lhs.Shape.back() != 2 || rhs.Shape.back() != 2) {
+        THROW("Complex Hadamard product is supported for complex tensors only", VAR(lhs.Shape.back()), VAR(rhs.Shape.back()));
+    }
+
+    for (int64_t index = 0; index + 1 < lhs.GetDimensions(); ++index) {
+        if (lhs.Shape[index] != rhs.Shape[index] && rhs.Shape[index] != 1) {
+            THROW("Incompatible shapes for Hadamard product", VAR(index), VAR(lhs.Shape[index]), VAR(rhs.Shape[index]));
+        }
+    }
+
+    return lhs;
 }
 
 THadamardProductNode::THadamardProductNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
-    : TNodeBase(lhs->GetMeta())
+    : TNodeBase(CalculateMeta(lhs->GetMeta(), rhs->GetMeta()))
     , Lhs_(std::move(lhs))
     , Rhs_(std::move(rhs))
-{
-    if (Lhs_->GetValueType() != Rhs_->GetValueType()) {
-        THROW("Different value types", VAR(Lhs_->GetValueType()), VAR(Rhs_->GetValueType()));
-    }
-    if (Lhs_->GetDimensions() != Rhs_->GetDimensions()) {
-        THROW("Different number of dimensions", VAR(Lhs_->GetDimensions()), VAR(Rhs_->GetDimensions()));
-    }
-    for (int64_t index = 0; index < Lhs_->GetDimensions(); ++index) {
-        if (Lhs_->GetShape()[index] != Rhs_->GetShape()[index] && Rhs_->GetShape()[index] != 1) {
-            THROW("Incompatible shapes", VAR(Lhs_->GetShape()[index]), VAR(Rhs_->GetShape()[index]));
-        }
-    }
-}
+{ }
 
 const TNodeBasePtr& THadamardProductNode::GetLhs() const
 {
@@ -1094,6 +1116,23 @@ std::vector<TNodeBase*> THadamardProductNode::GetInputs() const
     return {Lhs_.get(), Rhs_.get()};
 }
 
+int64_t THadamardProductNode::GetBufferSize() const
+{
+    return 2 * GetDimensions() * sizeof(int64_t);
+}
+
+void THadamardProductNode::SetBuffer(char* buffer)
+{
+    LhsShape_ = reinterpret_cast<int64_t*>(buffer);
+    RhsShape_ = LhsShape_ + GetDimensions();
+}
+
+void THadamardProductNode::Initialize(IDevice* device)
+{
+    device->CopyToDevice(LhsShape_, Lhs_->GetShape().data(), GetDimensions() * sizeof(int64_t));
+    device->CopyToDevice(RhsShape_, Rhs_->GetShape().data(), GetDimensions() * sizeof(int64_t));
+}
+
 void THadamardProductNode::EvaluateCpu()
 {
     switch (GetValueType()) {
@@ -1102,15 +1141,6 @@ void THadamardProductNode::EvaluateCpu()
         return;
     case EValueType::Float64:
         DoEvaluateCpu<double>();
-        return;
-    case EValueType::Int16:
-        DoEvaluateCpu<int16_t>();
-        return;
-    case EValueType::Int32:
-        DoEvaluateCpu<int32_t>();
-        return;
-    case EValueType::Int64:
-        DoEvaluateCpu<int64_t>();
         return;
     default:
         THROW("CPU inference does not support this value type", VAR(GetValueType()));
@@ -1139,18 +1169,58 @@ void THadamardProductNode::DoEvaluateCpu()
     auto* output = reinterpret_cast<T*>(GetOutput());
 
     for (int64_t index = 0; index < Lhs_->GetElementCount(); ++index) {
-        output[index] = lhs[index] * rhs[index];
+        std::vector<int64_t> rhsIndices(Rhs_->GetDimensions());
+
+        int64_t indexCopy = index;
+        for (int64_t index = Rhs_->GetDimensions() - 1; index >= 0; --index) {
+            rhsIndices[index] = indexCopy % Lhs_->GetShape()[index];
+            indexCopy /= Lhs_->GetShape()[index];
+            if (rhsIndices[index] >= Rhs_->GetShape()[index]) {
+                assert(Rhs_->GetShape()[index] == 1);
+                rhsIndices[index] = 0;
+            }
+        }
+
+        int64_t rhsIndex = 0;
+        for (int64_t index = 0; index < Rhs_->GetDimensions(); ++index) {
+            rhsIndex = rhsIndex * Rhs_->GetShape()[index] + rhsIndices[index];
+        }
+
+        output[index] = lhs[index] * rhs[rhsIndex];
     }
 }
 
 template <typename T>
 void THadamardProductNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
-    auto* lhs = reinterpret_cast<const T*>(Lhs_->GetOutput());
-    auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
+    HadamardProductBroadcast(
+        context.Stream,
+        reinterpret_cast<const T*>(Lhs_->GetOutput()),
+        reinterpret_cast<const T*>(Rhs_->GetOutput()),
+        reinterpret_cast<T*>(GetOutput()),
+        LhsShape_,
+        RhsShape_,
+        GetDimensions(),
+        GetElementCount());
+}
 
-    HadamardProduct(context.Stream, lhs, rhs, output, GetElementCount());
+TTensorMeta THadamardProductNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
+{
+    if (lhs.ValueType != rhs.ValueType) {
+        THROW("Different value types", VAR(lhs.ValueType), VAR(rhs.ValueType));
+    }
+
+    if (lhs.Shape.size() != rhs.Shape.size()) {
+        THROW("Different number of dimensions", VAR(lhs.Shape.size()), VAR(rhs.Shape.size()));
+    }
+
+    for (int64_t index = 0; index < lhs.GetDimensions(); ++index) {
+        if (lhs.Shape[index] != rhs.Shape[index] && rhs.Shape[index] != 1) {
+            THROW("Incompatible shapes for Hadamard product", VAR(index), VAR(lhs.Shape[index]), VAR(rhs.Shape[index]));
+        }
+    }
+
+    return lhs;
 }
 
 TPermuteNode::TPermuteNode(TNodeBasePtr input, std::vector<int64_t> permutation)
@@ -1467,26 +1537,29 @@ void TSlicedSoftmaxNode::DoEvaluateCpu()
         return;
     }
 
-    if (prefixSize > GetElementCount()) {
-        THROW("Invalid prefix size", VAR(prefixSize), VAR(GetElementCount()));
+    if (prefixSize > GetShape().back()) {
+        THROW("Invalid prefix size", VAR(prefixSize), VAR(GetShape().back()));
     }
 
-    T max = input[0];
-    for (int64_t index = 1; index < prefixSize; ++index) {
-        max = std::max(max, input[index]);
-    }
+    int64_t vectorSize = GetShape().back();
+    for (int64_t startIndex = 0; startIndex < GetElementCount(); startIndex += vectorSize) {
+        T max = input[startIndex];
+        for (int64_t index = 1; index < prefixSize; ++index) {
+            max = std::max(max, input[startIndex + index]);
+        }
 
-    T expSum = 0.0;
-    for (int64_t index = 0; index < prefixSize; ++index) {
-        expSum += exp(input[index] - max);
-    }
+        T expSum = 0.0;
+        for (int64_t index = 0; index < prefixSize; ++index) {
+            expSum += exp(input[startIndex + index] - max);
+        }
 
-    for (int64_t index = 0; index < prefixSize; ++index) {
-        output[index] = exp(input[index] - max) / expSum;
-    }
+        for (int64_t index = 0; index < prefixSize; ++index) {
+            output[startIndex + index] = exp(input[startIndex + index] - max) / expSum;
+        }
 
-    for (int64_t index = prefixSize; index < GetElementCount(); ++index) {
-        output[index] = input[index];
+        for (int64_t index = prefixSize; index < vectorSize; ++index) {
+            output[startIndex + index] = input[startIndex + index];
+        }
     }
 }
 
@@ -1497,7 +1570,13 @@ void TSlicedSoftmaxNode::DoEvaluateGpu(const TEvaluationContext& context)
     auto* prefixSizePtr = reinterpret_cast<int64_t*>(PrefixSize_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
-    SlicedSoftmax(context.Stream, input, output, prefixSizePtr, GetElementCount());
+    SlicedSoftmax(
+        context.Stream,
+        input,
+        output,
+        prefixSizePtr,
+        GetElementCount(),
+        GetShape().back());
 }
 
 } // namespace NHamKaas

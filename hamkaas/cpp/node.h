@@ -147,8 +147,6 @@ private:
     const TNodeBasePtr Lhs_;
     const TNodeBasePtr Rhs_;
 
-    bool Initialized_ = false;
-
     int64_t* LhsShape_;
     int64_t* RhsShape_;
 
@@ -346,12 +344,22 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
+    int64_t GetBufferSize() const override;
+    void SetBuffer(char* buffer) override;
+
+    void Initialize(IDevice* device) override;
+
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Lhs_;
     const TNodeBasePtr Rhs_;
+
+    int64_t* LhsShape_;
+    int64_t* RhsShape_;
+
+    static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
 
     template <class T>
     void DoEvaluateCpu();
@@ -371,12 +379,22 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
+    int64_t GetBufferSize() const override;
+    void SetBuffer(char* buffer) override;
+
+    void Initialize(IDevice* device) override;
+
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Lhs_;
     const TNodeBasePtr Rhs_;
+
+    int64_t* LhsShape_;
+    int64_t* RhsShape_;
+
+    static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
 
     template <class T>
     void DoEvaluateCpu();

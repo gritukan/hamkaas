@@ -409,23 +409,34 @@ def build_model(conf: Config, weights: TransformerWeights):
         # Apply RoPE rotation to the q and k vectors for each head
         # q, k [head_count, head_size / 2, 2] * freq_cis_row[head_size / 2, 2] -> [head_count, head_size / 2, 2]
 
-        for h in range(conf.n_heads):
-            # Get the q and k vectors for this head
-            q_head = hamkaas.SliceNode(q, h * head_size, (h + 1) * head_size)
-            k_head = hamkaas.SliceNode(k, h * head_size, (h + 1) * head_size)
+        q = q.reshape([conf.n_heads, head_size // 2, 2])
+        k = k.reshape([conf.n_heads, head_size // 2, 2])
 
-            # Rotate q and k by the freq_cis_real and freq_cis_imag
-            q_head = hamkaas.ReshapeNode(q_head, [head_size // 2, 2])
-            k_head = hamkaas.ReshapeNode(k_head, [head_size // 2, 2])
+        freq_cis_row = freq_cis_row.reshape([1, head_size // 2, 2])
 
-            q_head = hamkaas.ComplexHadamardProductNode(q_head, freq_cis_row)
-            k_head = hamkaas.ComplexHadamardProductNode(k_head, freq_cis_row)
+        q = q.complex_hadamard_product(freq_cis_row)
+        k = k.complex_hadamard_product(freq_cis_row)
 
-            q_head = hamkaas.ReshapeNode(q_head, [head_size])
-            k_head = hamkaas.ReshapeNode(k_head, [head_size])
+        q = q.reshape([conf.n_heads * head_size])
+        k = k.reshape([conf.n_heads * head_size])
 
-            q = hamkaas.ReplaceSlice(q, q_head, h * head_size, (h + 1) * head_size)
-            k = hamkaas.ReplaceSlice(k, k_head, h * head_size, (h + 1) * head_size)
+        # for h in range(conf.n_heads):
+        #     # Get the q and k vectors for this head
+        #     q_head = hamkaas.SliceNode(q, h * head_size, (h + 1) * head_size)
+        #     k_head = hamkaas.SliceNode(k, h * head_size, (h + 1) * head_size)
+
+        #     # Rotate q and k by the freq_cis_real and freq_cis_imag
+        #     q_head = hamkaas.ReshapeNode(q_head, [head_size // 2, 2])
+        #     k_head = hamkaas.ReshapeNode(k_head, [head_size // 2, 2])
+
+        #     q_head = hamkaas.ComplexHadamardProductNode(q_head, freq_cis_row)
+        #     k_head = hamkaas.ComplexHadamardProductNode(k_head, freq_cis_row)
+
+        #     q_head = hamkaas.ReshapeNode(q_head, [head_size])
+        #     k_head = hamkaas.ReshapeNode(k_head, [head_size])
+
+        #     q = hamkaas.ReplaceSlice(q, q_head, h * head_size, (h + 1) * head_size)
+        #     k = hamkaas.ReplaceSlice(k, k_head, h * head_size, (h + 1) * head_size)
 
         # Save key,value at this time step (pos) to our kv cache
         loff = l * conf.seq_len * dim
@@ -448,18 +459,21 @@ def build_model(conf: Config, weights: TransformerWeights):
         scores = hamkaas.ReshapeNode(scores, [conf.n_heads, conf.seq_len])
         scores = hamkaas.HadamardProductNode(scores, inv_sqrt_head_size_2)
 
-        scores = hamkaas.ReshapeNode(scores, [conf.n_heads * conf.seq_len])
+        scores = scores.sliced_softmax(pos_plus_one)
 
-        # Multihead attention. Iterate over all heads
-        for h in range(conf.n_heads):
-            att = hamkaas.SliceNode(scores, h * conf.seq_len, (h + 1) * conf.seq_len)
-            #if l == 0:
-            #    att.set_debug()
+        pos_indicator = pos_indicator.reshape([1, conf.seq_len])
+        scores = scores * pos_indicator
 
-            att = hamkaas.SlicedSoftmaxNode(att, pos_plus_one)
-            att = hamkaas.HadamardProductNode(att, pos_indicator)
+        # Multihead attention. Iterate over all heads.
+        # for h in range(conf.n_heads):
+        #     att = hamkaas.SliceNode(scores, h * conf.seq_len, (h + 1) * conf.seq_len)
+        #     #if l == 0:
+        #     #    att.set_debug()
 
-            scores = hamkaas.ReplaceSlice(scores, att, h * conf.seq_len, (h + 1) * conf.seq_len)
+        #     att = hamkaas.SlicedSoftmaxNode(att, pos_plus_one)
+        #     att = hamkaas.HadamardProductNode(att, pos_indicator)
+
+        #     scores = hamkaas.ReplaceSlice(scores, att, h * conf.seq_len, (h + 1) * conf.seq_len)
 
         v_m = hamkaas.SliceNode(value_cache, loff, loff + conf.seq_len * dim)
         v_m = hamkaas.ReshapeNode(v_m, [conf.seq_len, conf.n_heads, head_size])
