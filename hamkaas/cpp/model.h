@@ -27,7 +27,7 @@ public:
 private:
     const TBootstrap* Bootstrap_;
 
-    const TNodeBasePtr RootNode_;
+    TNodeBasePtr RootNode_;
 
     bool UseGpu_ = false;
 

@@ -60,10 +60,10 @@ const std::vector<std::shared_ptr<TNodeBase>>& TNodeBase::GetInputs() const
     return Inputs_;
 }
 
-void TNodeBase::ReplaceInput(TNodeBase* oldInput, std::shared_ptr<TNodeBase> newInput)
+void TNodeBase::ReplaceInput(TNodeBasePtr oldInput, TNodeBasePtr newInput)
 {
     for (auto& input : Inputs_) {
-        if (input.get() == oldInput) {
+        if (input == oldInput) {
             input = newInput;
         }
     }

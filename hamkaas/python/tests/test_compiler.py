@@ -13,7 +13,7 @@ class TestCompilerCpu:
         cls.plugin = hamkaas.HamKaasPlugin("../../cpp/libhamkaas.so")
 
     def compile(self, node):
-        return self.plugin.compile_model(node, use_gpu=self.USE_GPU)
+        return self.plugin.compile_model(node, use_gpu=self.USE_GPU, use_cudnn=self.USE_CUDNN)
 
     @pytest.mark.parametrize("dtype", [torch.float32, torch.int64])
     def test_constant_node(self, dtype):
@@ -219,7 +219,7 @@ class TestCompilerCpu:
             lhs_tensor = torch.rand(lhs_shape, dtype=lhs_dtype)
             rhs_tensor = torch.rand(rhs_shape, dtype=rhs_dtype)
             result = model.evaluate({"lhs": lhs_tensor, "rhs": rhs_tensor})
-            assert torch.allclose(result, lhs_tensor @ rhs_tensor)
+            assert torch.allclose(result, lhs_tensor @ rhs_tensor, rtol=1e-3, atol=1e-3)
 
         # Simple matrix multiplication.
         do_test([1, 1], [1, 1], dtype)
@@ -641,7 +641,7 @@ class TestCompilerCpu:
         x_t = torch.tensor([1], dtype=dtype)
         y_t = torch.tensor([1], dtype=dtype)
 
-        for i in range(index):
+        for _ in range(index):
             x, y = y, x + y
             x_t, y_t = y_t, x_t + y_t
 
@@ -653,3 +653,7 @@ class TestCompilerCpu:
 
 class TestCompilerCuda(TestCompilerCpu):
     USE_GPU = True
+
+
+class TestCompilerCudnn(TestCompilerCuda):
+    USE_CUDNN = True

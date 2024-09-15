@@ -39,7 +39,7 @@ public:
     // The order of nodes is important, inputs will be passed in this order.
     // Their outputs should be alive during evaluation.
     const std::vector<std::shared_ptr<TNodeBase>>& GetInputs() const;
-    void ReplaceInput(TNodeBase* oldInput, std::shared_ptr<TNodeBase> newInput);
+    void ReplaceInput(std::shared_ptr<TNodeBase> oldInput, std::shared_ptr<TNodeBase> newInput);
 
     // Memory management.
 

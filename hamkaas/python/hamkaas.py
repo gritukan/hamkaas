@@ -245,6 +245,8 @@ class MulNode(HamKaasNode):
         elif len(lhs_shape) == 3:
             if len(rhs.get_shape()) != 3:
                 raise ValueError("Incompatible shapes for multiplication {lhs.get_shape()} vs {rhs.get_shape()}")
+            if lhs_shape[0] != rhs.get_shape()[0]:
+                raise ValueError("Incompatible shapes for multiplication {lhs.get_shape()} vs {rhs.get_shape()}")
             if lhs_shape[2] != rhs.get_shape()[1]:
                 raise ValueError("Incompatible shapes for multiplication {lhs.get_shape()} vs {rhs.get_shape()}")
         elif len(lhs_shape) != 2 or len(rhs.get_shape()) != 2:

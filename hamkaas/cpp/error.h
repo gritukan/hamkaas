@@ -4,6 +4,10 @@
 #include <sstream>
 #include <vector>
 
+#ifdef USE_CUDNN
+#include "cudnn-frontend/include/cudnn_frontend.h"
+#endif
+
 namespace NHamKaas {
 
 template <typename T>
@@ -144,3 +148,29 @@ private:
             exit(1); \
         } \
     } while (0)
+
+#ifdef USE_CUDNN
+
+#define CUDNN_CHECK_ERROR(error) \
+    do { \
+        if (error != CUDNN_STATUS_SUCCESS) { \
+            THROW("CUDNN error", VAR(std::to_string(error))); \
+        } \
+    } while (0)
+
+#define CUDNN_ASSERT(error) \
+    do { \
+        if (error != CUDNN_STATUS_SUCCESS) { \
+            fprintf(stderr, "CUDNN error in %s:%d: %d\n", __FILE__, __LINE__, error); \
+            exit(1); \
+        } \
+    } while (0)
+
+#define CUDNN_FE_CHECK_ERROR(status) \
+    do { \
+        if (status.is_bad()) { \
+            THROW("CUDNN frontend error", VAR(status.get_message())); \
+        } \
+    } while (0)
+
+#endif

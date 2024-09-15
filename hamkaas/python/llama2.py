@@ -704,7 +704,7 @@ def run(args):
 
     plugin = hamkaas.HamKaasPlugin("../cpp/libhamkaas.so")
 
-    model = plugin.compile_model(node, use_gpu=True)
+    model = plugin.compile_model(node, use_gpu=True, use_cudnn=False)
 
     print("Model compiled.")
 

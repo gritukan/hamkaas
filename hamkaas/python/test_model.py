@@ -3,11 +3,19 @@ import torch
 
 plugin = hamkaas.HamKaasPlugin("../cpp/libhamkaas.so")
 
-in1_ = hamkaas.ConstantTensor(torch.tensor([[1.0, 2.0], [3.0, 4.0]]))
-out = in1_.sliced_softmax(2)
-model = plugin.compile_model(out, use_gpu=True)
+t1 = hamkaas.ConstantTensor(torch.tensor([1, 2, 3, 4], dtype=torch.float32))
+t2 = hamkaas.ConstantTensor(torch.tensor([5, 6], dtype=torch.float32))
+x = t1.replace(t2, 1, 3)
+# t1 = torch.rand((1, 8, 2))
+# t2 = torch.rand((1, 2, 1))
+# in1_ = hamkaas.ConstantTensor(t1)
+# in2_ = hamkaas.ConstantTensor(t2)
+# out = in1_ @ in2_
+model = plugin.compile_model(x, use_gpu=True, use_cudnn=False)
 
-print(model.evaluate(inputs={}))
+for _ in range(1):
+    print(model.evaluate(inputs={}))
+
 #print(model.evaluate(inputs={}))
 #print(model.evaluate(inputs={}))
 

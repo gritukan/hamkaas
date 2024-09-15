@@ -13,6 +13,10 @@
 #include <unordered_set>
 #include <unordered_map>
 
+#ifdef USE_CUDNN
+#include "cudnn_optimizer.h"
+#endif
+
 namespace NHamKaas {
 
 TModel::TModel(const TBootstrap* bootstrap, TNodeBasePtr rootNode)
@@ -45,15 +49,19 @@ void TModel::Compile(
     const TCompilationOptions& options,
     const std::unordered_map<std::string, const char*>& constants)
 {
-    if (options.UseCudnn) {
-        THROW("CUDNN is not supported");
-    }
-
     UseGpu_ = options.UseGpu;
     if (UseGpu_) {
         Device_ = CreateCudaDevice();
     } else {
         Device_ = CreateCpuDevice();
+    }
+
+    if (options.UseCudnn) {
+#ifdef USE_CUDNN
+        RootNode_ = RunCudnnOptimizer(RootNode_, Bootstrap_);
+#else
+        THROW("HamKaas was compiled without CUDNN support");
+#endif
     }
 
     // NB: After this point, the model cannot be further modified.
