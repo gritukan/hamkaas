@@ -246,3 +246,91 @@ Here you can see in important property of the massively parallel computation. Th
 Another manifestation of this issue is the case if the number of blocks is a little bit bigger than the number of SMs. In this case, after the first batch of blocks is executed, only a small number of SMs will be used leading to the underutilization of the GPU. This can be fixed either by changing the number of blocks or by building better pipelines so there is no barrier after the kernel and the next kernel can be run without waiting for the previous one to complete.
 
 This story is one of the reasons why it is advisable to make all the layer sizes in deep learning models divisible by a large power of 2. All the threads are becoming more homogeneous and there are less number of divergences of the threads.
+
+# 04: Bank conflicts
+
+TODO
+
+# 05: Streams and Graphs
+
+Open the file `05.cu`. Look at the `DoSlow` function and try to understand what it does.
+
+<details>
+<summary> Answer </summary>
+This function adds 100 to all the elements of the array `a`` of length `n` by executing kernel that adds 1 for 100 times.
+</details>
+
+This can be definitely optimized by writing a kernel that adds 100 to all the elements, but it will be too boring. Let's try to optimize the code keeping 100 kernel launches.
+
+Profile the code using `nsys` by using the command `nsys profile -o 05.prof ./05`. Open the profile and zoom in to the kernel invocations. You will see something like this.
+
+![](_imgs/7.png)
+
+GPU is definitely underutilized here, there are big gaps on the `CUDA HW` timeline. This is because synchronization between CPU and GPU is required on kernel launch and waiting for the kernel to finish.
+
+We want to launch multiple kernels at once but make sure that the next kernel execution starts only after the previous one is finished (to be honest, in this synthetic example it is not mandatory, but for the most of the real-world cases it is). This can be done by using CUDA streams. CUDA stream is a queue of the GPU commands that are executed in order but each command is launched only after completion of the previous one. Commands from different streams can be executed concurrently.
+
+To create a CUDA stream add the following code.
+```cpp
+cudaStream_t stream;
+CUDA_CHECK_ERROR(cudaStreamCreate(&stream));
+```
+
+As all other objects in CUDA, streams should be destroyed after usage.
+```cpp
+CUDA_CHECK_ERROR(cudaStreamDestroy(stream));
+```
+
+To launch a kernel in a stream, you need to use the extended syntax of the kernel launch. Typically we used `<<<Blocks, Threads>>>` syntax. Now we need to use `<<<Blocks, Threads, 0, stream>>>` syntax. The last argument is the stream in which the kernel should be executed. The third argument is the size of the dynamic shared memory which we will not use in this course.
+
+Try to implement the stream-based version of the code in the `DoStream` function. Uncomment its usage in `main` and run the code. You should see that the execution time is decreased. Rerun the `nsys` profiling and look at the timeline. It should look like this.
+
+![](_imgs/8.png)
+
+Now the GPU gaps became much smaller, but the utilization is still not 100%. This is because of some inter-GPU synchronization between launches.
+
+This can be further optimized by using CUDA graphs. CUDA graph is a set of nodes that can be kernel launches, memory copies, or other operations. There are dependencies between the nodes and the node is guaranteed to be executed only after all the dependencies are finished, which allows to describe more complex computations than with streams. CUDA tries to run such a graph in the most optimal way possible by, for example, running some nodes concurrently, if possible.
+
+There are two ways to describe the CUDA graph. Implicit way is to capture all the activity that was performed in some stream and then replay it in the graph. Explicit one requires to describe the nodes and dependencies manually. In our case, implicit way is sufficient and easier.
+
+Use
+```cpp
+CUDA_CHECK_ERROR(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
+```
+
+to start capturing activity in some stream. Note, that after running of this command all the activity in the stream is captured but not actually launched.
+
+To end the capture and store the activity in the graph use
+```cpp
+cudaGraph_t graph;
+CUDA_CHECK_ERROR(cudaStreamEndCapture(stream, &graph));
+```
+
+Finally, use
+```cpp
+cudaGraphExec_t graphExec;
+CUDA_CHECK_ERROR(cudaGraphInstantiate(&graphExec, graph, 0));
+```
+
+to compile the graph. After the graph is compiled, you can run it with
+```cpp
+CUDA_CHECK_ERROR(cudaGraphLaunch(graphExec, 0));
+```
+
+Note, that graph lauch is asynchronous and you may need to use `cudaDeviceSynchronize` after.
+
+To destroy the graph use
+```cpp
+CUDA_CHECK_ERROR(cudaGraphExecDestroy(graphExec));
+CUDA_CHECK_ERROR(cudaGraphDestroy(graph));
+```
+
+Try to implement graph control flow in the `DoGraph` function. Uncomment its usage in `main` and run the code. You should see that the execution time is decreased even more. Rerun the `nsys` profiling and look at the timeline. It should look like this.
+
+![](_imgs/9.png)
+
+There is no per-kernel detalisation in the timeline since all the kernels are fused into the single entity. However, you can now see that GPU is utilized all the time. Let's have a look at what is going on inside the graph. Profile the code with `ncu -o 05.prof ./05`. You may find useful to disable `DoSlow` and `DoStream` functions in the code since `ncu` is slow if many kernels are launched. Also, you can lower the number of kernel launches in the `DoGraph` function to make profiling faster.
+
+Open the profile in the Nsight Compute. You will see just a number of your kernel launches without any changes. This is because graph API is about the flow of kernels, not the kernels themselves.
+
+Joining kernel launches using streams and graphs is a popular way to optimize GPU workloads. Again, this is possible because GPU workloads are more predictable than the CPU ones, so you can build a static graph of the computation.
