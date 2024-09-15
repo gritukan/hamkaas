@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 from dataclasses import dataclass
 
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, Union
 
 import ctypes
 import math
@@ -428,43 +428,14 @@ class Tr2(HamKaasNode):
         return self.input.eval_slow(inputs, buffers, cache).transpose(0, 2).transpose(0, 1)
 
 
-class ReplaceNodeConstantSlice(HamKaasNode):
-    def __init__(self, input: HamKaasNode, replacement: HamKaasNode, start: int, end: int):
+class ReplaceSlice(HamKaasNode):
+    def __init__(self, input: HamKaasNode, replacement: HamKaasNode, start: Union[HamKaasNode, int], end: Union[HamKaasNode, int]):
         super().__init__()
 
-        if input.get_type() != replacement.get_type():
-            raise ValueError("Mixed-precision operations are not supported")
-        if len(input.get_shape()) != 1 or len(replacement.get_shape()) != 1:
-            print(input.get_shape(), replacement.get_shape())
-            raise ValueError("Only vectors are supported for replace")
-        if start < 0 or start >= input.get_shape()[0]:
-            raise ValueError(f"Start index {start} is out of bounds for shape {input.get_shape()}")
-        if end < 0 or end > input.get_shape()[0]:
-            raise ValueError(f"End index {end} is out of bounds for shape {input.get_shape()}")
-        if end - start != replacement.get_shape()[0]:
-            raise ValueError(f"Replace length mismatch: {end - start} vs {replacement.get_shape()[0]}")
-
-        self.input = input
-        self.replacement = replacement
-        self.start = start
-        self.end = end
-
-    def get_type(self) -> torch.dtype:
-        return self.input.get_type()
-    
-    def get_shape(self) -> List[int]:
-        return self.input.get_shape()
-    
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        x = self.input.eval_slow(inputs, buffers, cache)
-        y = self.replacement.eval_slow(inputs, buffers, cache)
-        x[self.start:self.end] = y
-        return x
-
-
-class ReplaceNodeVariableSlice(HamKaasNode):
-    def __init__(self, input: HamKaasNode, replacement: HamKaasNode, start: HamKaasNode, end: HamKaasNode):
-        super().__init__()
+        if isinstance(start, int):
+            start = ConstantTensor(torch.tensor([start], dtype=torch.int64))
+        if isinstance(end, int):
+            end = ConstantTensor(torch.tensor([end], dtype=torch.int64))
 
         if input.get_type() != replacement.get_type():
             raise ValueError("Mixed-precision operations are not supported")
@@ -492,7 +463,6 @@ class ReplaceNodeVariableSlice(HamKaasNode):
 
         start = self.start.eval_slow(inputs, buffers, cache).item()
         end = self.end.eval_slow(inputs, buffers, cache).item()
-        #print('NEW', start, end, id(x))
         x[start:end] = y
         return x
 
@@ -599,10 +569,8 @@ def create_script(node: HamKaasNode) -> HamkaasScript:
             return register_node(f"Tr(${run(node.input)})")
         elif isinstance(node, Tr2):
             return register_node(f"Tr2(${run(node.input)})")
-        elif isinstance(node, ReplaceNodeConstantSlice):
-            return register_node(f"ReplaceNodeConstantSlice(${run(node.input)}, ${run(node.replacement)}, {node.start}, {node.end})")
-        elif isinstance(node, ReplaceNodeVariableSlice):
-            return register_node(f"ReplaceNodeVariableSlice(${run(node.input)}, ${run(node.replacement)}, ${run(node.start)}, ${run(node.end)})")
+        elif isinstance(node, ReplaceSlice):
+            return register_node(f"ReplaceSlice(${run(node.input)}, ${run(node.replacement)}, {node.start}, {node.end})")
         elif isinstance(node, SlicedSoftmaxNode):
             return register_node(f"SlicedSoftmaxNode(${run(node.input)}, ${run(node.prefix_size)})")
         elif isinstance(node, BufferNode):

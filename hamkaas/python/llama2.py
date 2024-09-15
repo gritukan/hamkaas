@@ -423,15 +423,15 @@ def build_model(conf: Config, weights: TransformerWeights):
             q_head = hamkaas.ReshapeNode(q_head, [head_size])
             k_head = hamkaas.ReshapeNode(k_head, [head_size])
 
-            q = hamkaas.ReplaceNodeConstantSlice(q, q_head, h * head_size, (h + 1) * head_size)
-            k = hamkaas.ReplaceNodeConstantSlice(k, k_head, h * head_size, (h + 1) * head_size)
+            q = hamkaas.ReplaceSlice(q, q_head, h * head_size, (h + 1) * head_size)
+            k = hamkaas.ReplaceSlice(k, k_head, h * head_size, (h + 1) * head_size)
 
         # Save key,value at this time step (pos) to our kv cache
         loff = l * conf.seq_len * dim
         cache_start = cache_start_indices[l]
         cache_end = cache_end_indices[l]
-        key_cache = hamkaas.ReplaceNodeVariableSlice(key_cache, k, cache_start, cache_end)
-        value_cache = hamkaas.ReplaceNodeVariableSlice(value_cache, v, cache_start, cache_end)
+        key_cache = hamkaas.ReplaceSlice(key_cache, k, cache_start, cache_end)
+        value_cache = hamkaas.ReplaceSlice(value_cache, v, cache_start, cache_end)
 
         q_m = hamkaas.ReshapeNode(q, [conf.n_heads, head_size, 1])
  
@@ -459,7 +459,7 @@ def build_model(conf: Config, weights: TransformerWeights):
             att = hamkaas.SlicedSoftmaxNode(att, pos_plus_one)
             att = hamkaas.HadamardProductNode(att, pos_indicator)
 
-            scores = hamkaas.ReplaceNodeConstantSlice(scores, att, h * conf.seq_len, (h + 1) * conf.seq_len)
+            scores = hamkaas.ReplaceSlice(scores, att, h * conf.seq_len, (h + 1) * conf.seq_len)
 
         v_m = hamkaas.SliceNode(value_cache, loff, loff + conf.seq_len * dim)
         v_m = hamkaas.ReshapeNode(v_m, [conf.seq_len, conf.n_heads, head_size])
@@ -469,7 +469,7 @@ def build_model(conf: Config, weights: TransformerWeights):
         scores = hamkaas.ReshapeNode(scores, [conf.n_heads, conf.seq_len, 1])
         prod = hamkaas.MulNode(v_m, scores) # [conf.n_heads, 1, head_size]
         prod = hamkaas.ReshapeNode(prod, [conf.n_heads * head_size])
-        xb = hamkaas.ReplaceNodeConstantSlice(xb, prod, 0, conf.n_heads * head_size)
+        xb = hamkaas.ReplaceSlice(xb, prod, 0, conf.n_heads * head_size)
 
         # Final matrix multiplication to get the output of the attention
         xb2 = hamkaas.MulNode(xb, wos[l])
@@ -739,6 +739,7 @@ def run(args):
 
 if __name__ == "__main__":
     sys.setrecursionlimit(10000000)
+    random.seed(42)
     args = {
         "checkpoint": './out/stories15M.bin',
         "temperature": "0.0",
