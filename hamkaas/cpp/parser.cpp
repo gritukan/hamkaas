@@ -36,7 +36,7 @@ std::vector<std::string> PreprocessScript(const std::string& script)
 TNodeBasePtr ParseScript(const std::string& script)
 {
     std::unordered_map<int, TNodeBasePtr> nodes;
-    std::optional<int> outputNodeIndex;
+    TNodeBasePtr outputNode;
 
     for (const auto& expression : PreprocessScript(script)) {
         int ptr = 0;
@@ -46,7 +46,7 @@ TNodeBasePtr ParseScript(const std::string& script)
                 THROW("Unexpected end of expression", VAR(expected, c), VAR(position, ptr));
             }
             if (expression[ptr] != c) {
-                THROW("Unexpected symbol", VAR(expected, c), VAR(got, expression[ptr]), VAR(position, ptr));
+                THROW("Unexpected symbol", VAR(expected, c), VAR(got, expression[ptr]), VAR(position, ptr), VAR(expression));
             }
             ++ptr;
         };
@@ -73,7 +73,7 @@ TNodeBasePtr ParseScript(const std::string& script)
                 THROW("Unexpected end of expression");
             }
 
-            std::vector<int> result;
+            std::vector<int64_t> result;
             skip('[');
             if (expression[ptr] == ']') {
                 ++ptr;
@@ -129,11 +129,21 @@ TNodeBasePtr ParseScript(const std::string& script)
             return parseInt();
         };
 
+        auto parseNodeRef = [&] {
+            auto nodeIndex = parseNodeIndex();
+            auto nodeIt = nodes.find(nodeIndex);
+            if (nodeIt == nodes.end()) {
+                THROW("Expression references unknown node", VAR(nodeIndex));
+            }
+
+            return nodeIt->second;
+        };
+
         const std::string Result = "result";
         if (expression.substr(0, Result.size()) == Result) {
             ptr += Result.size();
             skip('=');
-            outputNodeIndex = parseNodeIndex();
+            outputNode = parseNodeRef();
             if (ptr < expression.size()) {
                 THROW("Unexpected symbols after the end of expression", VAR(suffix, expression.substr(ptr)));
             }
@@ -160,64 +170,97 @@ TNodeBasePtr ParseScript(const std::string& script)
             skip(',');
             auto shape = parseIntList();
 
-            node = std::make_shared<TInputNode>(name, TTensorMeta{type, shape});
+            node = std::make_shared<TInputNode>(name, TTensorMeta{type, std::move(shape)});
         } else if (nodeType == "ConstantTensor") {
             auto name = parseStringArg();
             skip(',');
             auto type = parseValueTypeArg();
             skip(',');
             auto shape = parseIntList();
-            node = std::make_shared<TConstantNode>(TTensorMeta{type, shape}, name);
+
+            node = std::make_shared<TConstantNode>(TTensorMeta{type, std::move(shape)}, name);
+        } else if (nodeType == "BufferNode") {
+            auto type = parseValueTypeArg();
+            skip(',');
+            auto shape = parseIntList();
+
+            node = std::make_shared<TBufferNode>(TTensorMeta{type, std::move(shape)});
         } else if (nodeType == "SumNode") {
-            auto lhs = parseNodeIndex();
+            auto lhs = parseNodeRef();
             skip(',');
-            auto rhs = parseNodeIndex();
+            auto rhs = parseNodeRef();
 
-            auto lhsIt = nodes.find(lhs);
-            if (lhsIt == nodes.end()) {
-                THROW("Expression references unknown node", VAR(nodeIndex), VAR(lhs));
-            }
-            auto rhsIt = nodes.find(rhs);
-            if (rhsIt == nodes.end()) {
-                THROW("Expression references unknown node", VAR(nodeIndex), VAR(rhs));
-            }
-
-            node = std::make_shared<TSumNode>(lhsIt->second, rhsIt->second);
+            node = std::make_shared<TSumNode>(std::move(lhs), std::move(rhs));
         } else if (nodeType == "MulNode") {
-            auto lhs = parseNodeIndex();
+            auto lhs = parseNodeRef();
             skip(',');
-            auto rhs = parseNodeIndex();
-
-            auto lhsIt = nodes.find(lhs);
-            if (lhsIt == nodes.end()) {
-                THROW("Expression references unknown node", VAR(nodeIndex), VAR(lhs));
-            }
-            auto rhsIt = nodes.find(rhs);
-            if (rhsIt == nodes.end()) {
-                THROW("Expression references unknown node", VAR(nodeIndex), VAR(rhs));
-            }
-
-            node = std::make_shared<TMulNode>(lhsIt->second, rhsIt->second);
+            auto rhs = parseNodeRef();
+        
+            node = std::make_shared<TMulNode>(std::move(lhs), std::move(rhs));
         } else if (nodeType == "ReLUNode") {
-            auto input = parseNodeIndex();
+            auto input = parseNodeRef();
 
-            auto inputIt = nodes.find(input);
-            if (inputIt == nodes.end()) {
-                THROW("Expression references unknown node", VAR(nodeIndex), VAR(input));
-            }
-
-            node = std::make_shared<TReLUNode>(inputIt->second);
+            node = std::make_shared<TReLUNode>(std::move(input));
         } else if (nodeType == "SiLUNode") {
-            auto input = parseNodeIndex();
+            auto input = parseNodeRef();
 
-            auto inputIt = nodes.find(input);
-            if (inputIt == nodes.end()) {
-                THROW("Expression references unknown node", VAR(nodeIndex), VAR(input));
-            }
+            node = std::make_shared<TSiLUNode>(std::move(input));
+        } else if (nodeType == "SliceNode") {
+            auto input = parseNodeRef();
+            skip(',');
+            auto begin = parseInt();
+            skip(',');
+            auto end = parseInt();
 
-            node = std::make_shared<TSiLUNode>(inputIt->second);
+            node = std::make_shared<TSliceNode>(std::move(input), begin, end);
+        } else if (nodeType == "RMSNormNode") {
+            auto input = parseNodeRef();
+            skip(',');
+            auto weights = parseNodeRef();
+
+            node = std::make_shared<TRMSNormNode>(std::move(input), std::move(weights));
+        } else if (nodeType == "ReshapeNode") {
+            auto input = parseNodeRef();
+            skip(',');
+            auto shape = parseIntList();
+
+            node = std::make_shared<TReshapeNode>(std::move(input), std::move(shape));
+        } else if (nodeType == "ComplexHadamardProductNode") {
+            auto lhs = parseNodeRef();
+            skip(',');
+            auto rhs = parseNodeRef();
+
+            node = std::make_shared<TComplexHadamardProductNode>(std::move(lhs), std::move(rhs));
+        } else if (nodeType == "HadamardProductNode") {
+            auto lhs = parseNodeRef();
+            skip(',');
+            auto rhs = parseNodeRef();
+
+            node = std::make_shared<THadamardProductNode>(std::move(lhs), std::move(rhs));
+        } else if (nodeType == "Permute") {
+            auto input = parseNodeRef();
+            skip(',');
+            auto permutation = parseIntList();
+
+            node = std::make_shared<TPermuteNode>(std::move(input), std::move(permutation));
+        } else if (nodeType == "ReplaceSlice") {
+            auto input = parseNodeRef();
+            skip(',');
+            auto replacement = parseNodeRef();
+            skip(',');
+            auto begin = parseNodeRef();
+            skip(',');
+            auto end = parseNodeRef();
+
+            node = std::make_shared<TReplaceSliceNode>(std::move(input), std::move(replacement), std::move(begin), std::move(end));
+        } else if (nodeType == "SlicedSoftmaxNode") {
+            auto input = parseNodeRef();
+            skip(',');
+            auto prefixSize = parseNodeRef();
+
+            node = std::make_shared<TSlicedSoftmaxNode>(std::move(input), std::move(prefixSize));
         } else {
-            THROW("Unknown node type", VAR(nodeIndex), VAR(nodeType));
+            THROW("Unknown node type", VAR(nodeType));
         }
 
         skip(')');
@@ -231,16 +274,11 @@ TNodeBasePtr ParseScript(const std::string& script)
         }
     }
 
-    if (!outputNodeIndex) {
-        THROW("Output node index is not defined");
+    if (!outputNode) {
+        THROW("Output node is not defined");
     }
 
-    auto outputNodeIt = nodes.find(*outputNodeIndex);
-    if (outputNodeIt == nodes.end()) {
-        THROW("Output node references unknown node", VAR(*outputNodeIndex));
-    }
-
-    return outputNodeIt->second;
+    return outputNode;
 }
 
 } // namespace NHamKaas

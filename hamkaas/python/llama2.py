@@ -248,7 +248,7 @@ def transformer(token: int, pos: int, conf: Config, state: RunState, weights: Tr
                 ind = 1 if t <= pos else 0
                 for i in range(head_size):
                     state.xb[xb_ptr + i] += a * v[i] * ind
-
+    
         # Final matrix multiplication to get the output of the attention
         state.xb2 = matmul(state.xb2, state.xb, weights.wo[l * dim * dim:(l + 1) * dim * dim], dim, dim)
 
@@ -654,9 +654,17 @@ def run(args):
 
     print("Building model...")
 
-    model = build_model(config, weights)
+    node = build_model(config, weights)
 
     print("Model built.")
+
+    print("Compiling model...")
+
+    hamkaas.initialize("../cpp/libhamkaas.so")
+
+    model = hamkaas.compile_model(node)
+
+    print("Model compiled.")
 
     buffers = {
         "key_cache": torch.zeros(config.n_layers * config.seq_len * config.dim, dtype=torch.float32),
@@ -688,11 +696,14 @@ def run(args):
             inputs[f"cache_start_{l}"] = torch.tensor([loff + pos * dim], dtype=torch.int64)
             inputs[f"cache_end_{l}"] = torch.tensor([loff + (pos + 1) * dim], dtype=torch.int64)
 
-        logits = model.eval_slow(inputs, buffers, {})
-        #transformer(token, pos, config, state, weights)
-
-        #K = 3
-        #print('old', state.debug[:K], state.debug[len(state.debug) // 2 : len(state.debug) // 2 + K], state.debug[-K:])
+        #old_out = node.eval_slow(inputs, buffers, {}).contiguous().view(-1).tolist()
+        transformer(token, pos, config, state, weights)
+        old_out = state.logits
+        logits = model.evaluate(inputs)
+        new_out = logits.contiguous().view(-1).tolist()
+        print('old', old_out[:3], old_out[len(old_out) // 2 : len(old_out) // 2 + 3], old_out[-3:])
+        print('new', new_out[:3], new_out[len(new_out) // 2 : len(new_out) // 2 + 3], new_out[-3:])
+        #sys.exit(0)
 
         # Forward the transformer to get logits for the next token
         if pos < len(prompt_tokens):
@@ -717,7 +728,7 @@ def run(args):
             if token == 1 and vocab[next_token][0] == ' ' else vocab[next_token]
         )
 
-        print(token_str, end="")
+        #print(token_str, end="")
         sys.stdout.flush()
         
         if next_token == 1:

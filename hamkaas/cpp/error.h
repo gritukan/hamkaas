@@ -1,7 +1,23 @@
 #include <stdexcept>
 #include <sstream>
+#include <vector>
 
 namespace NHamKaas {
+
+template <typename T>
+std::ostream& operator<<(std::ostream& stream, const std::vector<T>& data)
+{
+    stream << "[";
+    for (size_t index = 0; index < data.size(); ++index) {
+        stream << data[index];
+        if (index != data.size() - 1) {
+            stream << ", ";
+        }
+    }
+    stream << "]";
+
+    return stream;
+}
 
 template <class T>
 class NamedValue

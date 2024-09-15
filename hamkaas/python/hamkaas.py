@@ -206,13 +206,6 @@ class MulNode(HamKaasNode):
             return [self.lhs.get_shape()[0], self.lhs.get_shape()[1], self.rhs.get_shape()[2]]
 
     def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        lhs = self.lhs.eval_slow(inputs, buffers, cache)
-        rhs = self.rhs.eval_slow(inputs, buffers, cache)
-        # if self.debug:
-        #     print('lhs', lhs[0], lhs[1])
-        #     import sys
-        #     sys.exit(0)
-        #     print('rhs', self.rhs.get_shape())
         return torch.matmul(self.lhs.eval_slow(inputs, buffers, cache), self.rhs.eval_slow(inputs, buffers, cache))
 
 
@@ -230,6 +223,7 @@ class ReLUNode(HamKaasNode):
 
     def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
         return self.input.eval_slow(inputs, buffers, cache).clamp(min=0)    
+
 
 class SiLUNode(HamKaasNode):
     def __init__(self, input: HamKaasNode):
@@ -554,7 +548,7 @@ def create_script(node: HamKaasNode) -> HamkaasScript:
         elif isinstance(node, Permute):
             return register_node(f"Permute(${run(node.input)}, {node.permutation})")
         elif isinstance(node, ReplaceSlice):
-            return register_node(f"ReplaceSlice(${run(node.input)}, ${run(node.replacement)}, {node.start}, {node.end})")
+            return register_node(f"ReplaceSlice(${run(node.input)}, ${run(node.replacement)}, ${run(node.start)}, ${run(node.end)})")
         elif isinstance(node, SlicedSoftmaxNode):
             return register_node(f"SlicedSoftmaxNode(${run(node.input)}, ${run(node.prefix_size)})")
         elif isinstance(node, BufferNode):

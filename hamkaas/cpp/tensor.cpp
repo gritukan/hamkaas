@@ -4,22 +4,22 @@
 
 namespace NHamKaas {
 
-int TTensorMeta::GetDimensions() const
+int64_t TTensorMeta::GetDimensions() const
 {
-    return static_cast<int>(Shape.size());
+    return static_cast<int64_t>(Shape.size());
 }
 
-int TTensorMeta::GetElementCount() const
+int64_t TTensorMeta::GetElementCount() const
 {
-    int count = 1;
-    for (int size : Shape) {
+    int64_t count = 1;
+    for (int64_t size : Shape) {
         count *= size;
     }
 
     return count;
 }
 
-int TTensorMeta::GetElementSize() const
+int64_t TTensorMeta::GetElementSize() const
 {
     switch (ValueType) {
     case EValueType::Float16:
@@ -39,12 +39,12 @@ int TTensorMeta::GetElementSize() const
     }
 }
 
-int TTensorMeta::GetCapacity() const
+int64_t TTensorMeta::GetCapacity() const
 {
     return GetElementCount() * GetElementSize();
 }
 
-TTensor::TTensor(TTensorMeta meta, void* data)
+TTensor::TTensor(TTensorMeta meta, char* data)
     : Meta_(meta)
     , Data_(data)
 { }
@@ -59,37 +59,37 @@ EValueType TTensor::GetValueType() const
     return Meta_.ValueType;
 }
 
-int TTensor::GetDimensions() const
+int64_t TTensor::GetDimensions() const
 {
     return Meta_.GetDimensions();
 }
 
-const std::vector<int>& TTensor::GetShape() const
+const std::vector<int64_t>& TTensor::GetShape() const
 {
     return Meta_.Shape;
 }
 
-int TTensor::GetElementCount() const
+int64_t TTensor::GetElementCount() const
 {
     return Meta_.GetElementCount();
 }
 
-int TTensor::GetElementSize() const
+int64_t TTensor::GetElementSize() const
 {
     return Meta_.GetElementSize();
 }
 
-int TTensor::GetCapacity() const
+int64_t TTensor::GetCapacity() const
 {
     return Meta_.GetCapacity();
 }
 
-const void* TTensor::GetData() const
+const char* TTensor::GetData() const
 {
     return Data_;
 }
 
-void* TTensor::GetData()
+char* TTensor::GetData()
 {
     return Data_;
 }

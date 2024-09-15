@@ -11,7 +11,7 @@ struct TCompilationResult
 struct TNamedTensor
 {
     const char* Name;
-    const void* Data;
+    const char* Data;
 };
 
 extern "C" TCompilationResult HamKaasCompileModel(
@@ -25,7 +25,7 @@ extern "C" const char* HamKaasEvaluateModel(
     const void* model,
     const TNamedTensor* inputTensors,
     int inputTensorCount,
-    void* outputTensor);
+    char* outputTensor);
 
 // For testing purposes only.
 

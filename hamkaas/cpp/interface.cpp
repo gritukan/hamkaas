@@ -20,7 +20,7 @@ extern "C" TCompilationResult HamKaasCompileModel(
     const TNamedTensor* constantTensors,
     int constantTensorCount)
 {
-    std::unordered_map<std::string, const void*> constants;
+    std::unordered_map<std::string, const char*> constants;
     for (int index = 0; index < constantTensorCount; ++index) {
         constants[constantTensors[index].Name] = constantTensors[index].Data;
     }
@@ -48,9 +48,9 @@ extern "C" const char* HamKaasEvaluateModel(
     const void* model,
     const TNamedTensor* inputTensors,
     int inputTensorCount,
-    void* outputTensor)
+    char* outputTensor)
 {
-    std::unordered_map<std::string, const void*> inputs;
+    std::unordered_map<std::string, const char*> inputs;
     for (int index = 0; index < inputTensorCount; ++index) {
         inputs[inputTensors[index].Name] = inputTensors[index].Data;
     }

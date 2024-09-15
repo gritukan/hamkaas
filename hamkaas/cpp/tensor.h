@@ -1,10 +1,11 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 namespace NHamKaas {
 
-constexpr int MaxDimensions = 3;
+constexpr int64_t MaxDimensions = 3;
 
 enum EValueType
 {
@@ -21,33 +22,33 @@ struct TTensorMeta
     EValueType ValueType;
 
     // TODO: Replace it with compact vector.
-    std::vector<int> Shape;
+    std::vector<int64_t> Shape;
 
-    int GetDimensions() const;
-    int GetElementCount() const;
-    int GetElementSize() const;
-    int GetCapacity() const;
+    int64_t GetDimensions() const;
+    int64_t GetElementCount() const;
+    int64_t GetElementSize() const;
+    int64_t GetCapacity() const;
 };
 
 class TTensor
 {
 public:
-    TTensor(TTensorMeta meta, void* data);
+    TTensor(TTensorMeta meta, char* data);
 
     const TTensorMeta& GetMeta() const;
     EValueType GetValueType() const;
-    int GetDimensions() const;
-    const std::vector<int>& GetShape() const;
-    int GetElementCount() const;
-    int GetElementSize() const;
-    int GetCapacity() const;
+    int64_t GetDimensions() const;
+    const std::vector<int64_t>& GetShape() const;
+    int64_t GetElementCount() const;
+    int64_t GetElementSize() const;
+    int64_t GetCapacity() const;
 
-    const void* GetData() const;
-    void* GetData();
+    const char* GetData() const;
+    char* GetData();
 
 private:
     TTensorMeta Meta_;
-    void* Data_;
+    char* Data_;
 };
 
 } // namespace NHamKaas

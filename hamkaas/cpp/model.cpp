@@ -5,6 +5,8 @@
 
 #include <cassert>
 #include <cstring>
+#include <functional>
+#include <iostream>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -14,7 +16,7 @@ TModel::TModel(TNodeBasePtr rootNode)
     : RootNode_(std::move(rootNode))
 { }
 
-void TModel::Compile(const std::unordered_map<std::string, const void*>& constants)
+void TModel::Compile(const std::unordered_map<std::string, const char*>& constants)
 {
     // NB: After this point, the model cannot be further modified.
     BuildEvaluationOrder();
@@ -22,7 +24,7 @@ void TModel::Compile(const std::unordered_map<std::string, const void*>& constan
     FillConstants(constants);
 }
 
-void TModel::Evaluate(const std::unordered_map<std::string, const void*>& inputs, void* output) const
+void TModel::Evaluate(const std::unordered_map<std::string, const char*>& inputs, char* output) const
 {
     for (auto* node : EvaluationOrder_) {
         if (auto* inputNode = dynamic_cast<TInputNode*>(node)) {
@@ -37,28 +39,26 @@ void TModel::Evaluate(const std::unordered_map<std::string, const void*>& inputs
         }
     }
 
-    std::memcpy(output, OutputBuffer_, RootNode_->GetOutputSize());
+    std::memcpy(output, RootNode_->GetOutput(), RootNode_->GetCapacity());
 }
 
 void TModel::BuildEvaluationOrder()
 {
-    std::vector<TNodeBase*> stack;
     std::unordered_set<TNodeBase*> visited;
-
-    stack.push_back(RootNode_.get());
-    while (!stack.empty()) {
-        auto node = stack.back();
-        stack.pop_back();
+    std::function<void(TNodeBase*)> dfs = [&] (TNodeBase* node) -> void {
         if (visited.count(node)) {
-            EvaluationOrder_.push_back(node);
-            continue;
+            return;
         }
         visited.insert(node);
-        stack.push_back(node);
+
         for (const auto& input : node->GetInputs()) {
-            stack.push_back(input);
+            dfs(input);
         }
-    }
+
+        EvaluationOrder_.push_back(node);
+    };
+
+    dfs(RootNode_.get());
 }
 
 void TModel::AllocateMemory()
@@ -70,10 +70,12 @@ void TModel::AllocateMemory()
         for (auto* input : node->GetInputs()) {
             // Input node may not be the owner of the output.
             // Let's find the real owner.
-            while (input->GetOutputOwner() != input) {
+            while (input && input->GetOutputOwner() != input) {
                 input = input->GetOutputOwner();
             }
-            lastNodeOccurence[input] = node;
+            if (input) {
+                lastNodeOccurence[input] = node;
+            }
         }
     }
 
@@ -87,25 +89,37 @@ void TModel::AllocateMemory()
     std::unordered_map<TNodeBase*, int64_t> outputMemory;
 
     TAllocator allocator;
-    for (auto* node : EvaluationOrder_) {
-        auto bufferSize = node->GetBufferSize();
-        auto bufferPtr = allocator.Allocate(bufferSize);
-        assert(bufferMemory.emplace(node, bufferPtr).second);
 
-        auto outputSize = node->GetOutputSize();
-        auto outputPtr = allocator.Allocate(outputSize);
-        assert(outputMemory.emplace(node, outputPtr).second);
+    // Output buffers for input nodes should be available at the beginning
+    // in order to copy input data before execution. At first pass, we allocate
+    // output buffers for input nodes, on the second pass for all other nodes.
+    for (int iteration = 0; iteration < 2; ++iteration) {
+        for (auto* node : EvaluationOrder_) {
+            auto isInputNode = dynamic_cast<TInputNode*>(node) != nullptr;
+            if (isInputNode != (iteration == 0)) {
+                continue;
+            }
 
-        // Buffer may be released immediately after evaluation.
-        allocator.Free(bufferPtr, bufferSize);
+            auto bufferSize = node->GetBufferSize();
+            auto bufferPtr = allocator.Allocate(bufferSize);
+            assert(bufferMemory.emplace(node, bufferPtr).second);
 
-        // Free outputs that are not needed anymore.
-        for (auto* output : outputsToFree[node]) {
-            allocator.Free(outputMemory[output], output->GetOutputSize());
+            auto outputSize = node->GetOutputSize();
+            auto outputPtr = allocator.Allocate(outputSize);
+            assert(outputMemory.emplace(node, outputPtr).second);
+
+            // Buffer may be released immediately after evaluation.
+            allocator.Free(bufferPtr, bufferSize);
+
+            // Free outputs that are not needed anymore.
+            for (auto* output : outputsToFree[node]) {
+                allocator.Free(outputMemory[output], output->GetOutputSize());
+            }
         }
     }
 
     auto* baseAddress = static_cast<char*>(malloc(allocator.GetWorkingSetSize()));
+    memset(baseAddress, 0, allocator.GetWorkingSetSize());
     for (auto* node : EvaluationOrder_) {
         node->SetBuffer(baseAddress + bufferMemory[node]);
         node->SetOutput(baseAddress + outputMemory[node]);
@@ -113,7 +127,7 @@ void TModel::AllocateMemory()
     OutputBuffer_ = baseAddress + outputMemory[RootNode_.get()];
 }
 
-void TModel::FillConstants(const std::unordered_map<std::string, const void*>& constants)
+void TModel::FillConstants(const std::unordered_map<std::string, const char*>& constants)
 {
     for (auto* node : EvaluationOrder_) {
         if (auto* constantNode = dynamic_cast<TConstantNode*>(node)) {
