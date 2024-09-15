@@ -428,30 +428,6 @@ class Tr2(HamKaasNode):
         return self.input.eval_slow(inputs, buffers, cache).transpose(0, 2).transpose(0, 1)
 
 
-class DotProductNode(HamKaasNode):
-    def __init__(self, lhs: HamKaasNode, rhs: HamKaasNode):
-        super().__init__()
-
-        if lhs.get_type() != rhs.get_type():
-            raise ValueError("Mixed-precision operations are not supported")
-        if len(lhs.get_shape()) != 1 or len(rhs.get_shape()) != 1:
-            raise ValueError("Only vectors are supported for dot product")
-        if lhs.get_shape()[0] != rhs.get_shape()[0]:
-            raise ValueError(f"Shapes do not match for dot product: {lhs.get_shape()} vs {rhs.get_shape()}")
-
-        self.lhs = lhs
-        self.rhs = rhs
-
-    def get_type(self) -> torch.dtype:
-        return self.lhs.get_type()
-    
-    def get_shape(self) -> List[int]:
-        return [1]
-    
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return torch.dot(self.lhs.eval_slow(inputs, buffers, cache), self.rhs.eval_slow(inputs, buffers, cache))
-
-
 class ReplaceNodeConstantSlice(HamKaasNode):
     def __init__(self, input: HamKaasNode, replacement: HamKaasNode, start: int, end: int):
         super().__init__()
@@ -582,7 +558,7 @@ def create_script(node: HamKaasNode) -> HamkaasScript:
         def register_node(expr: str) -> int:
             index = len(node_to_index) + 1
             node_to_index[id(node)] = index
-            result.script += f"{index} = {expr};\n"
+            result.script += f"${index} = {expr};\n"
             return index
 
         if isinstance(node, InputTensor):
@@ -602,26 +578,40 @@ def create_script(node: HamKaasNode) -> HamkaasScript:
             node_type = str(node.get_type()).removeprefix("torch.")
             return register_node(f"ConstantTensor({node.get_name()}, {node_type}, {node.get_shape()})")
         elif isinstance(node, SumNode):
-            lhs_index = run(node.lhs)
-            rhs_index = run(node.rhs)
-            return register_node(f"SumNode({lhs_index}, {rhs_index})")
+            return register_node(f"SumNode(${run(node.lhs)}, ${run(node.rhs)})")
         elif isinstance(node, MulNode):
-            lhs_index = run(node.lhs)
-            rhs_index = run(node.rhs)
-            return register_node(f"MulNode({lhs_index}, {rhs_index})")
+            return register_node(f"MulNode(${run(node.lhs)}, ${run(node.rhs)})")
         elif isinstance(node, ReLUNode):
-            input_index = run(node.input)
-            return register_node(f"ReLUNode({input_index})")
+            return register_node(f"ReLUNode(${run(node.input)})")
         elif isinstance(node, SiLUNode):
-            input_index = run(node.input)
-            return register_node(f"SiLUNode({input_index})")
+            return register_node(f"SiLUNode(${run(node.input)})")
         elif isinstance(node, SliceNode):
-            input_index = run(node.input)
-            return register_node(f"SliceNode({input_index}, {node.start}, {node.end})")
+            return register_node(f"SliceNode(${run(node.input)}, {node.start}, {node.end})")
+        elif isinstance(node, RMSNormNode):
+            return register_node(f"RMSNormNode(${run(node.input)}, ${run(node.weights)})")
+        elif isinstance(node, ReshapeNode):
+            return register_node(f"ReshapeNode(${run(node.input)}, {node.shape})")
+        elif isinstance(node, ComplexHadamardProductNode):
+            return register_node(f"ComplexHadamardProductNode(${run(node.lhs)}, ${run(node.rhs)})")
+        elif isinstance(node, HadamardProductNode):
+            return register_node(f"HadamardProductNode(${run(node.lhs)}, ${run(node.rhs)})")
+        elif isinstance(node, Tr):
+            return register_node(f"Tr(${run(node.input)})")
+        elif isinstance(node, Tr2):
+            return register_node(f"Tr2(${run(node.input)})")
+        elif isinstance(node, ReplaceNodeConstantSlice):
+            return register_node(f"ReplaceNodeConstantSlice(${run(node.input)}, ${run(node.replacement)}, {node.start}, {node.end})")
+        elif isinstance(node, ReplaceNodeVariableSlice):
+            return register_node(f"ReplaceNodeVariableSlice(${run(node.input)}, ${run(node.replacement)}, ${run(node.start)}, ${run(node.end)})")
+        elif isinstance(node, SlicedSoftmaxNode):
+            return register_node(f"SlicedSoftmaxNode(${run(node.input)}, ${run(node.prefix_size)})")
+        elif isinstance(node, BufferNode):
+            node_type = str(node.get_type()).removeprefix("torch.")
+            return register_node(f"BufferNode({node_type}, {node.get_shape()})")
         else:
             raise ValueError(f"Unsupported node type: {type(node)}")
     output = run(node)
-    result.script += f"result = {output};\n"
+    result.script += f"result = ${output};\n"
 
     return result
 
