@@ -10,7 +10,6 @@
 
 extern "C" void FreeErrorMessage(char* message)
 {
-    printf("%p\n", message);
     free(message);
 }
 
@@ -42,7 +41,6 @@ extern "C" TCompilationResult CompileModel(
 
 extern "C" void FreeModel(const void* model)
 {
-    printf("%p\n", model);
     delete static_cast<const TModel*>(model);
 }
 

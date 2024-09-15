@@ -26,6 +26,12 @@ int TTensorMeta::GetElementSize() const
         return 4;
     case EValueType::Float64:
         return 8;
+    case EValueType::Int16:
+        return 2;
+    case EValueType::Int32:
+        return 4;
+    case EValueType::Int64:
+        return 8;
     default:
         assert(false);
     }

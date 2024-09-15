@@ -104,18 +104,33 @@ const TNodeBasePtr& TSumNode::GetRhs() const
 
 std::vector<char> TSumNode::EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
 {
-    if (Lhs_->GetValueType() != EValueType::Float32) {
-        throw std::runtime_error("Only float32 is supported for CPU inference");
+    switch (GetValueType()) {
+    case EValueType::Float32:
+        return DoEvaluateCpu<float>(inputs);
+    case EValueType::Float64:
+        return DoEvaluateCpu<double>(inputs);
+    case EValueType::Int16:
+        return DoEvaluateCpu<int16_t>(inputs);
+    case EValueType::Int32:
+        return DoEvaluateCpu<int32_t>(inputs);
+    case EValueType::Int64:
+        return DoEvaluateCpu<int64_t>(inputs);
+    default:
+        throw std::runtime_error("CPU inference does not support this value type");
     }
+}
 
+template <class T>
+std::vector<char> TSumNode::DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+{
     auto lhsResult = Lhs_->EvaluateCpu(inputs);
     auto rhsResult = Rhs_->EvaluateCpu(inputs);
 
-    const auto* lhs = reinterpret_cast<const float*>(lhsResult.data());
-    const auto* rhs = reinterpret_cast<const float*>(rhsResult.data());
+    const auto* lhs = reinterpret_cast<const T*>(lhsResult.data());
+    const auto* rhs = reinterpret_cast<const T*>(rhsResult.data());
 
     std::vector<char> resultData(lhsResult.size());
-    auto* result = reinterpret_cast<float*>(resultData.data());
+    auto* result = reinterpret_cast<T*>(resultData.data());
 
     for (int index = 0; index < Lhs_->GetElementCount(); ++index) {
         std::vector<int> rhsIndices(Rhs_->GetDimensions());
@@ -198,22 +213,37 @@ TTensorMeta TMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& r
 
 std::vector<char> TMulNode::EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
 {
-    if (Lhs_->GetValueType() != EValueType::Float32) {
-        throw std::runtime_error("Only float32 is supported for CPU inference");
+    switch (GetValueType()) {
+    case EValueType::Float32:
+        return DoEvaluateCpu<float>(inputs);
+    case EValueType::Float64:
+        return DoEvaluateCpu<double>(inputs);
+    case EValueType::Int16:
+        return DoEvaluateCpu<int16_t>(inputs);
+    case EValueType::Int32:
+        return DoEvaluateCpu<int32_t>(inputs);
+    case EValueType::Int64:
+        return DoEvaluateCpu<int64_t>(inputs);
+    default:
+        throw std::runtime_error("CPU inference does not support this value type");
     }
+}
 
+template <class T>
+std::vector<char> TMulNode::DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+{
     auto lhsResult = Lhs_->EvaluateCpu(inputs);
     auto rhsResult = Rhs_->EvaluateCpu(inputs);
 
-    const auto* lhs = reinterpret_cast<const float*>(lhsResult.data());
-    const auto* rhs = reinterpret_cast<const float*>(rhsResult.data());
+    const auto* lhs = reinterpret_cast<const T*>(lhsResult.data());
+    const auto* rhs = reinterpret_cast<const T*>(rhsResult.data());
 
     int n = Lhs_->GetShape()[0];
     int k = Lhs_->GetShape()[1];
     int m = Rhs_->GetShape()[1];
 
-    std::vector<char> resultData(n * m * sizeof(float));
-    auto* result = reinterpret_cast<float*>(resultData.data());
+    std::vector<char> resultData(n * m * sizeof(T));
+    auto* result = reinterpret_cast<T*>(resultData.data());
 
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < m; ++j) {
@@ -240,18 +270,33 @@ const TNodeBasePtr& TReLUNode::GetInput() const
 
 std::vector<char> TReLUNode::EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
 {
-    if (Input_->GetValueType() != EValueType::Float32) {
-        throw std::runtime_error("Only float32 is supported for CPU inference");
+    switch (GetValueType()) {
+    case EValueType::Float32:
+        return DoEvaluateCpu<float>(inputs);
+    case EValueType::Float64:
+        return DoEvaluateCpu<double>(inputs);
+    case EValueType::Int16:
+        return DoEvaluateCpu<int16_t>(inputs);
+    case EValueType::Int32:
+        return DoEvaluateCpu<int32_t>(inputs);
+    case EValueType::Int64:
+        return DoEvaluateCpu<int64_t>(inputs);
+    default:
+        throw std::runtime_error("CPU inference does not support this value type");
     }
+}
 
+template <class T>
+std::vector<char> TReLUNode::DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+{
     auto inputResult = Input_->EvaluateCpu(inputs);
-    const auto* input = reinterpret_cast<const float*>(inputResult.data());
+    const auto* input = reinterpret_cast<const T*>(inputResult.data());
 
     std::vector<char> resultData(inputResult.size());
-    auto* result = reinterpret_cast<float*>(resultData.data());
+    auto* result = reinterpret_cast<T*>(resultData.data());
 
     for (int index = 0; index < Input_->GetElementCount(); ++index) {
-        result[index] = std::max(0.0f, input[index]);
+        result[index] = std::max<T>(0.0, input[index]);
     }
 
     return resultData;
@@ -269,15 +314,30 @@ const TNodeBasePtr& TSiLUNode::GetInput() const
 
 std::vector<char> TSiLUNode::EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
 {
-    if (Input_->GetValueType() != EValueType::Float32) {
-        throw std::runtime_error("Only float32 is supported for CPU inference");
+    switch (GetValueType()) {
+    case EValueType::Float32:
+        return DoEvaluateCpu<float>(inputs);
+    case EValueType::Float64:
+        return DoEvaluateCpu<double>(inputs);
+    case EValueType::Int16:
+        return DoEvaluateCpu<int16_t>(inputs);
+    case EValueType::Int32:
+        return DoEvaluateCpu<int32_t>(inputs);
+    case EValueType::Int64:
+        return DoEvaluateCpu<int64_t>(inputs);
+    default:
+        throw std::runtime_error("CPU inference does not support this value type");
     }
+}
 
+template <class T>
+std::vector<char> TSiLUNode::DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+{
     auto inputResult = Input_->EvaluateCpu(inputs);
-    const auto* input = reinterpret_cast<const float*>(inputResult.data());
+    const auto* input = reinterpret_cast<const T*>(inputResult.data());
 
     std::vector<char> resultData(inputResult.size());
-    auto* result = reinterpret_cast<float*>(resultData.data());
+    auto* result = reinterpret_cast<T*>(resultData.data());
 
     for (int index = 0; index < Input_->GetElementCount(); ++index) {
         result[index] = input[index] / (1 + exp(-input[index]));

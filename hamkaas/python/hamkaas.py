@@ -8,8 +8,14 @@ import ctypes
 import torch
 
 # For now, we support only these types for hamkaas.
-# The only exception is the output tensor that can be of integer type also.
-_SUPPORTED_TENSOR_TYPES = [torch.float16, torch.float32, torch.float64]
+_SUPPORTED_TENSOR_TYPES = [
+    torch.float16,
+    torch.float32,
+    torch.float64,
+    torch.int16,
+    torch.int32,
+    torch.int64,
+]
 
 # For now, we support only vectors and matrices.
 _MAX_TENSOR_DIMS = 2
@@ -111,10 +117,14 @@ class MulNode(HamkaasNode):
             raise ValueError("Mixed-precision operations are not supported")
         
         if len(lhs.get_shape()) != 2 or len(rhs.get_shape()) != 2:
+            print(lhs.get_shape())
             raise ValueError("Only matrices are supported for multiplication")
         
         if lhs.get_shape()[1] != rhs.get_shape()[0]:
             raise ValueError(f"Shapes do not match for multiplication: {lhs.get_shape()} vs {rhs.get_shape()}")
+        
+        self.lhs = lhs
+        self.rhs = rhs
 
     def get_type(self) -> torch.dtype:
         return self.lhs.get_type()
@@ -264,6 +274,10 @@ class HamkaasModel:
         self._model_ptr = model_ptr
         self._output_shape = output_shape
         self._output_type = output_type
+
+    def __del__(self) -> None:
+        assert _HAMKAAS_LIBRARY
+        _HAMKAAS_LIBRARY.lib.FreeModel(self._model_ptr)
 
     def evaluate(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         if _HAMKAAS_LIBRARY is None:

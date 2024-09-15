@@ -74,6 +74,9 @@ private:
     const TNodeBasePtr Rhs_;
 
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
+
+    template <class T>
+    std::vector<char> DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const;
 };
 
 class TMulNode
@@ -92,6 +95,9 @@ private:
     const TNodeBasePtr Rhs_;
 
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
+
+    template <class T>
+    std::vector<char> DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const;
 };
 
 class TReLUNode
@@ -106,6 +112,9 @@ public:
 
 private:
     const TNodeBasePtr Input_;
+
+    template <class T>
+    std::vector<char> DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const;
 };
 
 class TSiLUNode
@@ -120,4 +129,7 @@ public:
 
 private:
     const TNodeBasePtr Input_;
+
+    template <class T>
+    std::vector<char> DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const;
 };

@@ -109,7 +109,13 @@ TNodeBasePtr ParseScript(const TScript& script)
                 return EValueType::Float32;
             } else if (valueType == "float64") {
                 return EValueType::Float64;
-            } else {
+            } else if (valueType == "int16") {
+                return EValueType::Int16;
+            } else if (valueType == "int32") {
+                return EValueType::Int32;
+            } else if (valueType == "int64") {
+                return EValueType::Int64;
+            } else {                
                 throw std::runtime_error("Unknown value type: " + valueType);
             }
         };
