@@ -1,7 +1,7 @@
 NVCC = nvcc
 FLAGS = --std=c++17
 
-SRCS = 00.cu 01.cu 02.cu 03.cu 04.cu 05.cu
+SRCS = 00.cu 01.cu 02.cu 03.cu 04.cu 05.cu 06.cu
 
 TARGETS = $(SRCS:.cu=)
 
@@ -28,7 +28,10 @@ $(TARGETS): %: %.cu
 05-test: 05
 	./05
 
-test-all: 00-test 01-test 02-test 03-test 04-test 05-test
+06-test: 06
+	./06
+
+test-all: 00-test 01-test 02-test 03-test 04-test 05-test 06-test
 
 clean:
 	rm -f $(TARGETS)
