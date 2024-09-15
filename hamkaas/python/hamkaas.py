@@ -63,6 +63,12 @@ class HamKaasNode(ABC):
         elif isinstance(other, torch.Tensor):
             return SumNode(self, ConstantTensor(other))
         
+    def __mul__(self, other):
+        if isinstance(other, HamKaasNode):
+            return HadamardProductNode(self, other)
+        elif isinstance(other, torch.Tensor):
+            return HadamardProductNode(self, ConstantTensor(other))
+        
     def __matmul__(self, other):
         if isinstance(other, HamKaasNode):
             return MulNode(self, other)
@@ -78,9 +84,15 @@ class HamKaasNode(ABC):
             return SliceNode(self, index, index + 1)
         else:
             raise ValueError("Unsupported index type")
-    
+
+    def replace(self, replacement, start, end):
+        return ReplaceSlice(self, replacement, start, end)
+
     def reshape(self, shape: List[int]):
         return ReshapeNode(self, shape)
+    
+    def permute(self, permutation: List[int]):
+        return Permute(self, permutation)
 
     def relu(self):
         return ReLUNode(self)
@@ -90,6 +102,12 @@ class HamKaasNode(ABC):
     
     def rms_norm(self, weights: "HamKaasNode"):
         return RMSNormNode(self, weights)
+
+    def complex_hadamard_product(self, other: "HamKaasNode"):
+        return ComplexHadamardProductNode(self, other)
+
+    def sliced_softmax(self, prefix_size: int):
+        return SlicedSoftmaxNode(self, prefix_size)
 
 
 class InputTensor(HamKaasNode):
@@ -454,6 +472,13 @@ class Permute(HamKaasNode):
     def __init__(self, input: HamKaasNode, permutation: List[int]):
         super().__init__()
 
+        if input.get_type() not in [torch.float32, torch.float64]:
+            raise ValueError("Only float32 and float64 tensors are supported for permutation")
+        if len(input.get_shape()) != len(permutation):
+            raise ValueError("Permutation must have the same length as the input shape")
+        if set(permutation) != set(range(len(input.get_shape()))):
+            raise ValueError("Permutation must be a permutation of the input shape")
+
         self.input = input
         self.permutation = permutation
 
@@ -507,9 +532,13 @@ class ReplaceSlice(HamKaasNode):
 
 
 class SlicedSoftmaxNode(HamKaasNode):
-    def __init__(self, input: HamKaasNode, prefix_size: HamKaasNode):
+    def __init__(self, input: HamKaasNode, prefix_size: Union[int, HamKaasNode]):
         super().__init__()
 
+        if input.get_type() not in [torch.float32, torch.float64]:
+            raise ValueError("Only float32 and float64 tensors are supported for sliced softmax")
+        if isinstance(prefix_size, int):
+            prefix_size = ConstantTensor(torch.tensor([prefix_size], dtype=torch.int64))
         if prefix_size.get_type() != torch.int64:
             raise ValueError("Prefix size must be of type int64")
         if prefix_size.get_shape() != [1]:

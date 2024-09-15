@@ -416,6 +416,228 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([5], torch.int64, [5])
 
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    def test_complex_hadamard_product(self, dtype):
+        def do_test(lhs_shape, rhs_shape, lhs_dtype, rhs_dtype=None):
+            if rhs_dtype is None:
+                rhs_dtype = lhs_dtype
+
+            lhs = hamkaas.InputTensor("lhs", lhs_dtype, lhs_shape)
+            rhs = hamkaas.InputTensor("rhs", rhs_dtype, rhs_shape)
+            model = self.compile(lhs.complex_hadamard_product(rhs))
+
+            lhs_tensor = torch.rand(lhs_shape, dtype=lhs_dtype)
+            rhs_tensor = torch.rand(rhs_shape, dtype=rhs_dtype)
+            expected = torch.zeros_like(lhs_tensor)
+            for i in range(len(lhs_tensor)):
+                expected[i][0] = lhs_tensor[i][0] * rhs_tensor[i][0] - lhs_tensor[i][1] * rhs_tensor[i][1]
+                expected[i][1] = lhs_tensor[i][0] * rhs_tensor[i][1] + lhs_tensor[i][1] * rhs_tensor[i][0]
+
+            actual = model.evaluate({"lhs": lhs_tensor, "rhs": rhs_tensor})
+            assert torch.allclose(expected, actual)
+
+        # Simple Hadamard product.
+        do_test([5, 2], [5, 2], dtype)
+        do_test([1, 2], [1, 2], dtype)
+
+        # Wrong shapes.
+        with pytest.raises(Exception):
+            do_test([2], [2], dtype)
+        with pytest.raises(Exception):
+            do_test([2, 3], [2, 3], dtype)
+        with pytest.raises(Exception):
+            do_test([2, 2], [2, 3], dtype)
+        with pytest.raises(Exception):
+            do_test([2, 3], [2, 2], dtype)
+        with pytest.raises(Exception):
+            do_test([5, 5, 2], [5, 5, 2], dtype)
+
+        # Incompatible types.
+        with pytest.raises(Exception):
+            do_test([5, 2], [5, 2], torch.float32, torch.float64)
+
+        # Unsupported type.
+        with pytest.raises(Exception):
+            do_test([5, 2], [5, 2], torch.int64)
+
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    def test_hadamard_product(self, dtype):
+        def do_test(lhs_shape, rhs_shape, lhs_dtype, rhs_dtype=None):
+            if rhs_dtype is None:
+                rhs_dtype = lhs_dtype
+
+            lhs = hamkaas.InputTensor("lhs", lhs_dtype, lhs_shape)
+            rhs = hamkaas.InputTensor("rhs", rhs_dtype, rhs_shape)
+            model = self.compile(lhs * rhs)
+
+            lhs_tensor = torch.rand(lhs_shape, dtype=lhs_dtype)
+            rhs_tensor = torch.rand(rhs_shape, dtype=rhs_dtype)
+            expected = lhs_tensor * rhs_tensor
+
+            actual = model.evaluate({"lhs": lhs_tensor, "rhs": rhs_tensor})
+            assert torch.allclose(expected, actual)
+
+        # Simple Hadamard product.
+        do_test([1], [1], dtype)
+        do_test([5], [5], dtype)
+        do_test([5, 2], [5, 2], dtype)
+        do_test([1, 2], [1, 2], dtype)
+        do_test([1, 1, 1], [1, 1, 1], dtype)
+        do_test([5, 7, 2], [5, 7, 2], dtype)
+
+        # Incompatible shapes.
+        with pytest.raises(Exception):
+            do_test([2], [3], dtype)
+        with pytest.raises(Exception):
+            do_test([2, 3], [3, 2], dtype)
+        with pytest.raises(Exception):
+            do_test([2], [1, 2], dtype)
+        with pytest.raises(Exception):
+            do_test([2], [2, 1], dtype)
+
+        # Incompatible types.
+        with pytest.raises(Exception):
+            do_test([5], [5], torch.float32, torch.float64)
+
+        # Unsupported type.
+        with pytest.raises(Exception):
+            do_test([5], [5], torch.int64)
+
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    def test_permute(self, dtype):
+        def do_test(shape, dtype, permutation):
+            input = hamkaas.InputTensor("input", dtype, shape)
+            model = self.compile(input.permute(permutation))
+
+            input_tensor = torch.rand(shape, dtype=dtype)
+            result = model.evaluate({"input": input_tensor})
+            assert torch.allclose(result, input_tensor.permute(permutation))
+
+        do_test([5], dtype, [0])
+        do_test([5, 7], dtype, [1, 0])
+        do_test([5, 7, 9], dtype, [2, 0, 1])
+        do_test([5, 7, 9], dtype, [0, 1, 2])
+        do_test([5, 7, 9], dtype, [0, 2, 1])
+
+        # Wrong permutation.
+        with pytest.raises(Exception):
+            do_test([5], dtype, [1])
+        with pytest.raises(Exception):
+            do_test([5], dtype, [0, 0])
+        with pytest.raises(Exception):
+            do_test([5], dtype, [0, 2])
+        with pytest.raises(Exception):
+            do_test([5, 7], dtype, [1, 1])
+        with pytest.raises(Exception):
+            do_test([5, 7, 9], dtype, [2, 0, 0])
+
+        # Incompatible type.
+        with pytest.raises(Exception):
+            do_test([5], torch.int64, [0])
+
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    def test_replace_node(self, dtype):
+        def do_test(shape, dtype, replacement_shape, replacement_dtype, start, end):
+            input = hamkaas.InputTensor("input", dtype, shape)
+            replacement = hamkaas.InputTensor("replacement", replacement_dtype, replacement_shape)
+            model = self.compile(input.replace(replacement, start, end))
+
+            input_tensor = torch.rand(shape, dtype=dtype)
+            replacement_tensor = torch.rand(replacement_shape, dtype=replacement_dtype)
+            expected = input_tensor.clone()
+            expected[start:end] = replacement_tensor
+
+            actual = model.evaluate({"input": input_tensor, "replacement": replacement_tensor})
+            assert torch.allclose(expected, actual)
+
+        do_test([5], dtype, [2], dtype, 1, 3)
+        do_test([5], dtype, [5], dtype, 0, 5)
+
+        # 2d tensor.
+        with pytest.raises(Exception):
+            do_test([5, 5], dtype, [2, 5], dtype, 1, 3)
+
+        # Incompatible types.
+        with pytest.raises(Exception):
+            do_test([5], torch.float32, [2], torch.float64, 1, 3)
+
+        # Unsupported type.
+        with pytest.raises(Exception):
+            do_test([5], dtype, [2], torch.int64, 1, 3)
+
+        # Wrong indices.
+        with pytest.raises(Exception):
+            do_test([5], dtype, [2], dtype, 1, 2)
+        with pytest.raises(Exception):
+            do_test([5], dtype, [2], dtype, 1, 6)
+        with pytest.raises(Exception):
+            do_test([5], dtype, [2], dtype, 4, 3)
+
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    def test_buffer_node_persistence(self, dtype):
+        buffer = hamkaas.BufferTensor(dtype, [5])
+        replacement = hamkaas.InputTensor("replacement", dtype, [1])
+        start_index = hamkaas.InputTensor("start_index", torch.int64, [1])
+        end_index = hamkaas.InputTensor("end_index", torch.int64, [1])
+
+        output = buffer.replace(replacement, start_index, end_index)
+        model = self.compile(output)
+
+        for i in range(5):
+            result = model.evaluate({
+                "replacement": torch.tensor([i], dtype=dtype),
+                "start_index": torch.tensor([i], dtype=torch.int64),
+                "end_index": torch.tensor([i + 1], dtype=torch.int64)
+            })
+            assert result[:i].allclose(torch.tensor(list(range(i)), dtype=dtype))
+
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    def test_sliced_softmax(self, dtype):
+        def do_test(shape, dtype, size):
+            input = hamkaas.InputTensor("input", dtype, shape)
+            model = self.compile(input.sliced_softmax(size))
+
+            input_tensor = torch.rand(shape, dtype=dtype)
+            softmax = torch.nn.Softmax(dim=0)
+            expected = torch.cat((softmax(input_tensor[:size]), input_tensor[size:]))
+
+            result = model.evaluate({"input": input_tensor})
+            assert torch.allclose(result, expected)
+
+        do_test([5], dtype, 3)
+        do_test([5], dtype, 0)
+        do_test([5], dtype, 5)
+
+        # Incompatible shape.
+        with pytest.raises(Exception):
+            do_test([3, 3], dtype, 2)
+        
+        # Wrong index.
+        with pytest.raises(Exception):
+            do_test([5], dtype, 6)
+
+        # Unsupported type.
+        with pytest.raises(Exception):
+            do_test([5], torch.int64, 3)
+
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("index", [1, 2, 5, 10, 20, 40, 60, 100])
+    def test_fibonacci(self, dtype, index):
+        x = hamkaas.ConstantTensor(torch.tensor([1], dtype=dtype))
+        y = hamkaas.ConstantTensor(torch.tensor([1], dtype=dtype))
+
+        x_t = torch.tensor([1], dtype=dtype)
+        y_t = torch.tensor([1], dtype=dtype)
+
+        for i in range(index):
+            x, y = y, x + y
+            x_t, y_t = y_t, x_t + y_t
+
+        model = self.compile(y)
+        result = model.evaluate({})
+
+        assert torch.allclose(result, y_t)
+
 
 class TestCompilerCuda(TestCompilerCpu):
     USE_GPU = True

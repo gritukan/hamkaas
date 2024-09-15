@@ -1493,8 +1493,14 @@ void TSlicedSoftmaxNode::DoEvaluateCpu()
     auto prefixSize = *reinterpret_cast<const int64_t*>(PrefixSize_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
-    assert(prefixSize >= 1);
-    assert(prefixSize <= GetElementCount());
+    if (prefixSize == 0) {
+        memcpy(output, input, GetElementCount() * GetElementSize());
+        return;
+    }
+
+    if (prefixSize > GetElementCount()) {
+        THROW("Invalid prefix size", VAR(prefixSize), VAR(GetElementCount()));
+    }
 
     T max = input[0];
     for (int64_t index = 1; index < prefixSize; ++index) {

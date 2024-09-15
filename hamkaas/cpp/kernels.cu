@@ -292,7 +292,7 @@ __global__ void SoftmaxKernel(
     __shared__ T buffer[MaxThreadsPerBlock];
 
     int64_t prefixSize = *prefixSizePtr;
-
+    if (prefixSize)
     if (threadIdx.x < prefixSize) {
         T max = input[threadIdx.x];
         for (int index = threadIdx.x; index < prefixSize; index += prefixSize) {
