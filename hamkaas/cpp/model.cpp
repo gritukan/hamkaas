@@ -35,14 +35,6 @@ TModel::~TModel()
     if (GraphExec_) {
         CUDA_ASSERT(cudaGraphExecDestroy(GraphExec_));
     }
-
-    if (MemoryPool_) {
-        if (UseGpu_) {
-            CUDA_ASSERT(cudaFree(MemoryPool_));
-        } else {
-            free(MemoryPool_);
-        }
-    }
 }
 
 void TModel::Compile(

@@ -229,6 +229,12 @@ TNodeBasePtr ParseScript(const std::string& script)
             auto end = parseNodeRef();
 
             node = std::make_shared<TReplaceSliceNode>(std::move(input), std::move(replacement), std::move(begin), std::move(end));
+        } else if (nodeType == "HadamardProductNode") {
+            auto lhs = parseNodeRef();
+            skip(',');
+            auto rhs = parseNodeRef();
+
+            node = std::make_shared<THadamardProductNode>(std::move(lhs), std::move(rhs));
         } else {
             THROW("Unknown node type", VAR(nodeType));
         }
