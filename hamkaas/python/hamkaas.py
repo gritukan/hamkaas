@@ -411,6 +411,22 @@ class Tr(HamKaasNode):
     
     def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
         return self.input.eval_slow(inputs, buffers, cache).transpose(0, 1)
+    
+class Tr2(HamKaasNode):
+    def __init__(self, input: HamKaasNode):
+        super().__init__()
+
+        self.input = input
+
+    def get_type(self) -> torch.dtype:
+        return self.input.get_type()
+    
+    def get_shape(self) -> List[int]:
+        return [self.input.get_shape()[1], self.input.get_shape()[2], self.input.get_shape()[0]]
+    
+    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
+        return self.input.eval_slow(inputs, buffers, cache).transpose(0, 2).transpose(0, 1)
+
 
 class DotProductNode(HamKaasNode):
     def __init__(self, lhs: HamKaasNode, rhs: HamKaasNode):

@@ -456,20 +456,19 @@ def build_model(conf: Config, weights: TransformerWeights):
             #    att.set_debug()
 
             att = hamkaas.SlicedSoftmaxNode(att, pos_plus_one)
+            att = hamkaas.HadamardProductNode(att, pos_indicator)
 
-            # Weighted sum of the values, store back into xb
-            xb_slice = head_zeroes
+            scores = hamkaas.ReplaceNodeConstantSlice(scores, att, h * conf.seq_len, (h + 1) * conf.seq_len)
 
-            for t in range(conf.seq_len):
-                # Get the value vector for this head and at this timestep
-                v = hamkaas.SliceNode(value_cache, loff + t * dim + h * head_size, loff + t * dim + (h + 1) * head_size)
-                a = hamkaas.SliceNode(att, t, t + 1)
-                pos_ind = hamkaas.SliceNode(pos_indicator, t, t + 1)
-                prod = hamkaas.HadamardProductNode(v, a)
-                prod = hamkaas.HadamardProductNode(prod, pos_ind)
-                xb_slice = hamkaas.SumNode(xb_slice, prod)
+        v_m = hamkaas.SliceNode(value_cache, loff, loff + conf.seq_len * dim)
+        v_m = hamkaas.ReshapeNode(v_m, [conf.seq_len, conf.n_heads, head_size])
+        v_m = hamkaas.Tr2(v_m) # [conf.n_heads, head_size, conf.seq_len]
+        assert v_m.get_shape() == [conf.n_heads, head_size, conf.seq_len]
 
-            xb = hamkaas.ReplaceNodeConstantSlice(xb, xb_slice, h * head_size, (h + 1) * head_size)
+        scores = hamkaas.ReshapeNode(scores, [conf.n_heads, conf.seq_len, 1])
+        prod = hamkaas.MulNode(v_m, scores) # [conf.n_heads, 1, head_size]
+        prod = hamkaas.ReshapeNode(prod, [conf.n_heads * head_size])
+        xb = hamkaas.ReplaceNodeConstantSlice(xb, prod, 0, conf.n_heads * head_size)
 
         # Final matrix multiplication to get the output of the attention
         xb2 = hamkaas.MulNode(xb, wos[l])
@@ -500,7 +499,7 @@ def build_model(conf: Config, weights: TransformerWeights):
 
     # Classifier into logits
     logits = hamkaas.MulNode(x, wcls)
-    logits.set_debug()
+    #logits.set_debug()
     return logits
 
 
@@ -682,10 +681,10 @@ def run(args):
             inputs[f"cache_end_{l}"] = torch.tensor([loff + (pos + 1) * dim], dtype=torch.int64)
 
         logits = model.eval_slow(inputs, buffers, {})
-        transformer(token, pos, config, state, weights)
+        #transformer(token, pos, config, state, weights)
 
-        K = 3
-        print('old', state.debug[:K], state.debug[len(state.debug) // 2 : len(state.debug) // 2 + K], state.debug[-K:])
+        #K = 3
+        #print('old', state.debug[:K], state.debug[len(state.debug) // 2 : len(state.debug) // 2 + K], state.debug[-K:])
 
         # Forward the transformer to get logits for the next token
         if pos < len(prompt_tokens):
