@@ -73,7 +73,7 @@ We can see the lack of pipelining and the GPU doing nothing between the layers. 
 
 The first problem can be fixed by using CUDA grpahs just like in the previous lab, we will not do it nothing since it is not too interesting, but you can try if you are interested. Now we will focus on the second problem and instead of optimizing the kernel just like in the previous lab, we will use special library for matrix multiplication called cuBLAS.
 
-## 03: cuBLAS Inference
+## 03: cuBLAS
 
 Note, in this task we will continue to work in `02.cu` file, but use `make 03` to build the binary since we need to add `-DUSE_CUBLAS` flag to the compiler.
 
@@ -94,3 +94,41 @@ Now we can move to the implementation. We will use [cublasGemmEx](https://docs.n
 After you finish, run the model inference to check if everything is correct.
 
 Now run the profiling with `nsys` to see what has changed. You should notice that the `LinearLayerKernel` was replaced for cuBLAS kernels that are faster.
+
+## 04: cuDNN
+
+In previous task we used cuBLAS library to accelerate matrix multiplication. The problem with cuBLAS matrix multiplication algorithm is that it is a blackbox for us. It is proprietary and we cannot modify it which can be useful in some cases. Consider the first layer of our network and the ReLU activation function. These two operations can be natually fused into a single one to reduce the amount of data transferred between global memory and SMs. In the solution of task 02 it was quite easy since you controlled the implementation of the matrix multiplication but with the cuBLAS you cannot do it.
+
+In this task we will use [cuDNN](https://developer.nvidia.com/cudnn) library that is intended for optimization of the neural network graphs. It takes the shape and the parameters of the graph as an input and compiles it into the optimized kernels, including fast matrix multiplication and fusion of the kernels. However it does not allow to compile graphs of the arbitrary shape but only graphs of the specific structure. That's why it is a task for a higher-level optimizer to split a graph into the subgraphs that can be compiled by cuDNN.
+
+You can see the list of supported graph patterns [here](https://docs.nvidia.com/deeplearning/cudnn/latest/developer/graph-api.html#supported-graph-patterns). In our case we will use only generic graphs with `Matmul` function that is defined formally [here](https://docs.nvidia.com/deeplearning/cudnn/latest/developer/graph-api.html#generic-runtime-fusion-engines). In simple words, it is a graph that consists of a single matrix multiplication operation and maybe pointwise operations (like ReLU or vector addition) on its inputs and output. This shape is not random, it allows to fuse pointwise opeations with matrix multiplication kerenls while for example two matrix multiplications cannot be fused that easily.
+
+How to optimally split graph of our neural network into the subgraphs to compile them with cuDNN?
+
+<details>
+<summary> Answer </summary>
+
+First subgraph will the the first linear layer followed by the ReLU activation function. The second subgraph will be the second linear layer. The final argmax layer is not supported by cuDNN so we will implement in manually.
+
+</details>
+
+Now let's move to the implementation. We will not use the raw C cuDNN API since it is not very convenient to use. Instread, we will use [cuDNN FrontEnd](https://github.com/NVIDIA/cudnn-frontend) which is a official NVIDIA C++ wrapper over the cuDNN API. It is not distributed with the CUDA toolkit, but it is a header-only library, so all you need to do is to clone the repository to the directory with the lab using the `git clone https://github.com/NVIDIA/cudnn-frontend` command.
+
+When you are done, open the `04.cu` file. Look at the `TMnistCudnnNetwork`. During the initialization, it builds graphs for the first and the second layers using the `TCudnnGraphBuilder` class that you will implement. Also note, that for each graph we have three structures: the graph itself, `TensorMap` which is a mapping from the internal tensor descriptors to the pointers to their data and `GraphWorkspace` which is an allocated memory for the graph execution. cuDNN library provides for each graph the amount of memory needed for its execution and uses it for internal needs during evaluation. Take a look how these structures are filled and how graph is executed in the `Eval` function.
+
+Let's start with the simple part. Copy the `ArgMaxKernel` from the previous task. It should not change.
+
+Now let's implement the `AddVector` method of the `TCudnnGraphBuilder` class. It should add a tensor object to the graph that represents a 1d vector of floats of size `n` with some name and returns the tensor descriptor. There is a one important thing to note: cuDNN supports only tensor with dimensions from 3 to 8. You can read more about tensor layout in the [documentation](https://docs.nvidia.com/deeplearning/cudnn/latest/developer/core-concepts.html#tensors-and-layouts). Because of this we will represent a vector as a 3d tensor `1 x 1 x n`.
+
+You will use `tensor` method of the `Graph` class that takes tensor attributes as input. Usage of this method is described in the [documentation](https://github.com/NVIDIA/cudnn-frontend/blob/main/README.FE.1.0.md) in section `Define Tensors`. Make sure to fill `name`, `dim`, `stride` and `data_type` attributes. Stride of a some dimension of the tensor is a number of elements between two consecutive elements of the tensor in this dimension. For example, for the row-major matrix NxM, the stride of the first dimension is M and the second is 1.
+
+Now by analogy implmenet `AddRowMajorMatrix` and `AddColumnMajorMatrix` that represent 2d matrices of floats of size `n x m` with different layouts which is represented as a `1 x n x m` 3d tensor in cuDNN. `AddColumnMajorMatrix` is needed since in the linear layers the weight matrix is transposed. cuDNN does not support matrix transposition but we can just define the weights matrix as a column-major matrix which is the same. Hint: the only difference between these two methods is the `stride` attributes.
+
+Now move on to the `AddReLU` function. It takes a tensor descriptor as an input and returns a tensor descriptor of the result. To implement it, we will `pointwise` method of the `Graph` class. You can about its usage in the [documentation](https://github.com/NVIDIA/cudnn-frontend/blob/main/docs/operations/Pointwise.md). Do not forget to set `compute_data_type` and `data_type` of the resulting tensor since it is used to infer output type.
+
+The final challendge for this task is `AddLinearLayer`. The code creating graph objects for weights and biases tensors is already implemented for you, your task is to implement the computation. Try to figure out which cuDNN operations are needed for the linear layer ans how to use them yourself.
+
+When you are ready, compile the code using `make 04` and run the `04` binary. Note, that cuDNN frontend is slow to compile. Also, the graph compilation is slow, so you will have to wait a bit before inference starts. If you are interested in what is cuDNN compiler doing, run the binary with `CUDNN_FRONTEND_LOG_INFO=1 CUDNN_FRONTEND_LOG_FILE=stderr ./04`, you will see how cuDNN tries different heuristics to build optimal kernels. Also, the debug flags may be helpful in case if cuDNN returns errors.
+
+If you see 90+% accuracy, good job!
+
