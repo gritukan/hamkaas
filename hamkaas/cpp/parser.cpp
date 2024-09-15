@@ -41,10 +41,10 @@ TNodeBasePtr ParseScript(const TScript& script)
 
         auto skip = [&] (char c) {
             if (ptr == expression.size()) {
-                THROW("Unexpected end of expression", NVAR(expected, c), NVAR(position, ptr));
+                THROW("Unexpected end of expression", VAR(expected, c), VAR(position, ptr));
             }
             if (expression[ptr] != c) {
-                THROW("Unexpected symbol", NVAR(expected, c), NVAR(got, expression[ptr]), NVAR(position, ptr));
+                THROW("Unexpected symbol", VAR(expected, c), VAR(got, expression[ptr]), VAR(position, ptr));
             }
             ++ptr;
         };
@@ -54,7 +54,7 @@ TNodeBasePtr ParseScript(const TScript& script)
                 THROW("Unexpected end of expression, expected integer");
             }
             if (!std::isdigit(expression[ptr])) {
-                THROW("Unexpected end of expression, expected integer", NVAR(got, expression[ptr]), NVAR(position, ptr));
+                THROW("Unexpected end of expression, expected integer", VAR(got, expression[ptr]), VAR(position, ptr));
             }
 
             int result = 0;
@@ -128,7 +128,7 @@ TNodeBasePtr ParseScript(const TScript& script)
             skip('=');
             outputNodeIndex = parseInt();
             if (ptr < expression.size()) {
-                THROW("Unexpected symbols after the end of expression", NVAR(suffix, expression.substr(ptr)));
+                THROW("Unexpected symbols after the end of expression", VAR(suffix, expression.substr(ptr)));
             }
 
             continue;
@@ -223,7 +223,7 @@ TNodeBasePtr ParseScript(const TScript& script)
         skip(')');
 
         if (ptr < expression.size()) {
-            THROW("Unexpected symbols after the end of expression", NVAR(suffix, expression.substr(ptr)));
+            THROW("Unexpected symbols after the end of expression", VAR(suffix, expression.substr(ptr)));
         }
 
         if (!nodes.emplace(nodeIndex, node).second) {

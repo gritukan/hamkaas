@@ -72,7 +72,7 @@ void DoInverseElements(float* inputTensor, float* outputTensor, int size)
 {
     for (int i = 0; i < size; ++i) {
         if (inputTensor[i] == 0.0) {
-            THROW("Division by zero", NVAR(index, i));
+            THROW("Division by zero", VAR(index, i));
         }
         outputTensor[i] = 1.0f / inputTensor[i];
     }

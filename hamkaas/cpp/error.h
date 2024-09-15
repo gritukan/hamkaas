@@ -71,5 +71,14 @@ private:
 #define THROW(message, ...) \
     throw HamkaasException(__FILE__, __LINE__, message, ##__VA_ARGS__)
 
-#define NVAR(name, value) NamedValue(#name, value)
-#define VAR(var) NamedValue(#var, var)
+#define NUM_ARGS(...)  NUM_ARGS_IMPL(__VA_ARGS__, 2, 1)
+#define NUM_ARGS_IMPL(_1, _2, N, ...) N
+
+#define MACRO_CHOOSER(name, ...) MACRO_CHOOSER_IMPL(name, NUM_ARGS(__VA_ARGS__))
+#define MACRO_CHOOSER_IMPL(name, n) MACRO_CHOOSER_IMPL2(name, n)
+#define MACRO_CHOOSER_IMPL2(name, n) name##n
+
+#define VAR1(value) NamedValue(#value, value)
+#define VAR2(name, value) NamedValue(#name, value)
+
+#define VAR(...) MACRO_CHOOSER(VAR, __VA_ARGS__)(__VA_ARGS__)
