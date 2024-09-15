@@ -7,12 +7,6 @@
 __global__ void AddVectors(int n, double* a, double* b, double* c)
 {
     // Write your code here.
-// SOLUTION START
-    int index = blockDim.x * blockIdx.x + threadIdx.x;
-    //if (index < n) {
-        c[index] = a[index] + b[index];
-    //}
-// SOLUTION END
 }
 
 std::vector<double> AddVectorsGpu(std::vector<double> a, std::vector<double> b)
@@ -31,11 +25,9 @@ std::vector<double> AddVectorsGpu(std::vector<double> a, std::vector<double> b)
     CUDA_CHECK_ERROR(cudaMemcpy(gpuA, a.data(), a.size() * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK_ERROR(cudaMemcpy(gpuB, b.data(), b.size() * sizeof(double), cudaMemcpyHostToDevice));
 
-    constexpr int MaxThreadsPerBlock = 8;
-    int size = a.size();
-    int threadsPerBlock = std::min(size, MaxThreadsPerBlock);
-    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
-    AddVectors<<<blocksPerGrid, threadsPerBlock>>>(size, gpuA, gpuB, gpuC);
+    constexpr int ThreadsPerBlock = 8;
+    int blocksPerGrid = (a.size() + ThreadsPerBlock - 1) / ThreadsPerBlock;
+    AddVectors<<<blocksPerGrid, ThreadsPerBlock>>>(a.size(), gpuA, gpuB, gpuC);
     CUDA_CHECK_KERNEL();
 
     std::vector<double> c(a.size());

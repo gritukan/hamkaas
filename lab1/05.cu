@@ -3,36 +3,12 @@
 #include <iostream>
 #include <vector>
 
-__global__ void SiluKernel(double* a, int n)
+std::vector<double> SiLUGpu(std::vector<double> data)
 {
-    int index = blockDim.x * blockIdx.x + threadIdx.x;
-    if (index < n) {
-        double x = a[index];
-        a[index] = x / (1 + exp(-x));
-    }
+    // Your code here.
 }
 
-std::vector<double> SiluGpu(std::vector<double> data)
-{
-    double* gpuA;
-    CUDA_CHECK_ERROR(cudaMalloc(&gpuA, data.size() * sizeof(double)));
-    CUDA_CHECK_ERROR(cudaMemcpy(gpuA, data.data(), data.size() * sizeof(double), cudaMemcpyHostToDevice));
-
-    constexpr int MaxThreadsPerBlock = 256;
-    int size = data.size();
-    int threadsPerBlock = std::min(size, MaxThreadsPerBlock);
-    int blocksPerGrid = (size + threadsPerBlock - 1) / threadsPerBlock;
-    SiluKernel<<<blocksPerGrid, threadsPerBlock>>>(gpuA, size);
-    CUDA_CHECK_KERNEL();
-
-    std::vector<double> result(data.size());
-    CUDA_CHECK_ERROR(cudaMemcpy(result.data(), gpuA, data.size() * sizeof(double), cudaMemcpyDeviceToHost));
-    CUDA_CHECK_ERROR(cudaFree(gpuA));
-
-    return result;
-}
-
-std::vector<double> SiluCpu(std::vector<double> data)
+std::vector<double> SiLUCpu(std::vector<double> data)
 {
     for (int i = 0; i < data.size(); i++) {
         double x = data[i];
@@ -44,8 +20,8 @@ std::vector<double> SiluCpu(std::vector<double> data)
 
 bool DoTest(std::vector<double> data)
 {
-    auto gpuResult = SiluGpu(data);
-    auto cpuResult = SiluCpu(data);
+    auto gpuResult = SiLUGpu(data);
+    auto cpuResult = SiLUCpu(data);
 
     if (gpuResult == cpuResult) {
         std::cerr << "Test passed (n = " << data.size() << ")" << std::endl;

@@ -1,5 +1,5 @@
 NVCC = nvcc
-FLAGS = --std=c++17 --use_fast_math -O3
+FLAGS = --std=c++17
 
 SRCS = 00.cu 01.cu 02.cu 03.cu 04.cu 05.cu
 

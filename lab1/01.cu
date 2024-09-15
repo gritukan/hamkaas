@@ -6,20 +6,18 @@
 __global__ void AddVectorsKernel(double* a, double* b, double* c)
 {
     // Write your code here.
-// SOLUTION START
-    int index = threadIdx.x;
-    c[index] = a[index] + b[index];
-// SOLUTION END
 }
 
 std::vector<double> AddVectorsGpu(std::vector<double> a, std::vector<double> b)
 {
+    // Allocate memory for a, b and c on the GPU.
     double* gpuA;
     double* gpuB;
     double* gpuC;
     CUDA_CHECK_ERROR(cudaMalloc(&gpuA, a.size() * sizeof(double)));
     CUDA_CHECK_ERROR(cudaMalloc(&gpuB, b.size() * sizeof(double)));
     CUDA_CHECK_ERROR(cudaMalloc(&gpuC, a.size() * sizeof(double)));
+
     CUDA_CHECK_ERROR(cudaMemcpy(gpuA, a.data(), a.size() * sizeof(double), cudaMemcpyHostToDevice));
     CUDA_CHECK_ERROR(cudaMemcpy(gpuB, b.data(), b.size() * sizeof(double), cudaMemcpyHostToDevice));
 

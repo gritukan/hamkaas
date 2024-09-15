@@ -3,12 +3,9 @@
 #include <iostream>
 #include <vector>
 
-__global__ void AddMatricesKernel(double *a, double *b, double *c, int m)
+__global__ void AddMatricesKernel(double* a, double* b, double* c, int m)
 {
-    int x = threadIdx.x;
-    int y = threadIdx.y;
-
-    c[y * m + x] = a[y * m + x] + b[y * m + x];
+    // Your code here.
 }
 
 std::vector<std::vector<double>> AddMatricesGpu(std::vector<std::vector<double>> a, std::vector<std::vector<double>> b)
@@ -28,7 +25,7 @@ std::vector<std::vector<double>> AddMatricesGpu(std::vector<std::vector<double>>
     }
 
     dim3 threadsPerBlock(n, m);
-    AddMatricesKernel<<<1, n * m>>>(gpuA, gpuB, gpuC, m);
+    AddMatricesKernel<<<1, threadsPerBlock>>>(gpuA, gpuB, gpuC, m);
     CUDA_CHECK_KERNEL();
 
     std::vector<std::vector<double>> c(n, std::vector<double>(m));
