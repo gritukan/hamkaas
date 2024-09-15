@@ -656,10 +656,8 @@ def run(args):
     print("Building model...")
 
     model = build_model(config, weights)
-    print(hamkaas.create_script(model).script)
 
     print("Model built.")
-    sys.exit(0)
 
     buffers = {
         "key_cache": torch.zeros(config.n_layers * config.seq_len * config.dim, dtype=torch.float32),
