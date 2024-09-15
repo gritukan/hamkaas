@@ -71,9 +71,9 @@ class HamKaasNode(ABC):
         
     def __matmul__(self, other):
         if isinstance(other, HamKaasNode):
-            return MulNode(self, other)
+            return MatMulNode(self, other)
         elif isinstance(other, torch.Tensor):
-            return MulNode(self, ConstantTensor(other))
+            return MatMulNode(self, ConstantTensor(other))
 
     def __getitem__(self, index):
         if isinstance(index, slice):
@@ -230,7 +230,7 @@ class SumNode(HamKaasNode):
         return self.lhs.eval_slow(inputs, buffers, cache) + self.rhs.eval_slow(inputs, buffers, cache)
 
 
-class MulNode(HamKaasNode):
+class MatMulNode(HamKaasNode):
     def __init__(self, lhs: HamKaasNode, rhs: HamKaasNode):
         super().__init__()
 
@@ -631,8 +631,8 @@ def traverse_node(node: HamKaasNode) -> TraversalResult:
             return register_node(f"ConstantTensor({node.get_name()}, {node_type}, {node.get_shape()})")
         elif isinstance(node, SumNode):
             return register_node(f"SumNode(${run(node.lhs)}, ${run(node.rhs)})")
-        elif isinstance(node, MulNode):
-            return register_node(f"MulNode(${run(node.lhs)}, ${run(node.rhs)})")
+        elif isinstance(node, MatMulNode):
+            return register_node(f"MatMulNode(${run(node.lhs)}, ${run(node.rhs)})")
         elif isinstance(node, ReLUNode):
             return register_node(f"ReLUNode(${run(node.input)})")
         elif isinstance(node, SiLUNode):

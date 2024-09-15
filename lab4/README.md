@@ -20,12 +20,12 @@ Before we start to actually work with the code, let's look at the script languag
 $1 = InputTensor(input, float32, [128, 28, 28]);
 $2 = ReshapeNode($1, [128, 784]);
 $3 = ConstantTensor(constant_0, float32, [784, 1000]);
-$4 = MulNode($2, $3);
+$4 = MatMulNode($2, $3);
 $5 = ConstantTensor(constant_1, float32, [1, 1000]);
 $6 = SumNode($4, $5);
 $7 = ReLUNode($6);
 $8 = ConstantTensor(constant_2, float32, [1000, 10]);
-$9 = MulNode($7, $8);
+$9 = MatMulNode($7, $8);
 $10 = ConstantTensor(constant_3, float32, [1, 10]);
 $11 = SumNode($9, $10);
 result = $11;
@@ -57,7 +57,7 @@ The `cpp` directory has the following files:
 - `interface.h, interface.cpp` - contains the interface of the shared library that is used for the communication between the frontend and the backend.
 - `kernels.h, kernels.cu` - contains the CUDA kernels that are used for node execution.
 - `model.h, model.cpp` - contains the code that compiles and executes the model.
-- `node.h, node.cpp` - contains the code that represents the nodes of the computation graph. It has a class for every node type (e.g., `MulNode`, `SumNode`, etc.) that defines the node behavior.
+- `node.h, node.cpp` - contains the code that represents the nodes of the computation graph. It has a class for every node type (e.g., `MatMulNode`, `SumNode`, etc.) that defines the node behavior.
 - `parser.h, parser.cpp` - contains the code that parses the script and converts it into the tree of nodes.
 - `tensor.h, tensor.cpp` - contains the `TTensorMeta` class that represents the tensor type and shape.
 
@@ -126,7 +126,7 @@ After the allocator is completed, you can use it to allocate buffer and output m
 - `GetBufferSize()` returns the amount of buffer memory required for the node.
 - `GetOutputSize()` returns the amount of output memory required for the node.
 - `SetBuffer(char* buffer)`, `SetOutput(char* output)` set the buffers for the node.
-- `GetOutputOwner()` returns the node that allocated the memory for the output of this node. Typically, it is the node itself (so, `node->GetOutputOwner() == node`) but for the aforementioned transparent nodes it can be other node. For example if there is a `MulNode` and `ReshapeNode` that takes the result of the `MulNode` as an input, then the `ReshapeNode` should return the `MulNode` as the output owner. This method is used to understand when some output memory can be freed.
+- `GetOutputOwner()` returns the node that allocated the memory for the output of this node. Typically, it is the node itself (so, `node->GetOutputOwner() == node`) but for the aforementioned transparent nodes it can be other node. For example if there is a `MatMulNode` and `ReshapeNode` that takes the result of the `MatMulNode` as an input, then the `ReshapeNode` should return the `MatMulNode` as the output owner. This method is used to understand when some output memory can be freed.
 
 To allocate the real memory for the nodes, you need to call `Device_->DeviceMalloc` method. `Device` is the abstraction used in HamKaas to encapsulate some device-specific operations. Right now, there is only one device - `CpuDevice` defined in `device.h` that is used in case of the CPU execution. You will implement `CudaDevice` for the GPU execution later.
 

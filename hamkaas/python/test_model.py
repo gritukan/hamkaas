@@ -25,7 +25,7 @@ print(c_1 @ c_2)
 c_1 = hamkaas.ConstantTensor(c_1)
 c_2 = hamkaas.ConstantTensor(c_2)
 
-out = hamkaas.MulNode(c_1, c_2)
+out = hamkaas.MatMulNode(c_1, c_2)
 model = hamkaas.compile_model(out, use_gpu=True)
 print(model.evaluate(inputs={}))
 

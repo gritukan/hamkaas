@@ -185,12 +185,12 @@ TNodeBasePtr ParseScript(const std::string& script)
             auto rhs = parseNodeRef();
 
             node = std::make_shared<TSumNode>(std::move(lhs), std::move(rhs));
-        } else if (nodeType == "MulNode") {
+        } else if (nodeType == "MatMulNode") {
             auto lhs = parseNodeRef();
             skip(',');
             auto rhs = parseNodeRef();
         
-            node = std::make_shared<TMulNode>(std::move(lhs), std::move(rhs));
+            node = std::make_shared<TMatMulNode>(std::move(lhs), std::move(rhs));
         } else if (nodeType == "ReLUNode") {
             auto input = parseNodeRef();
 

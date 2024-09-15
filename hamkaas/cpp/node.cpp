@@ -260,18 +260,18 @@ TTensorMeta TSumNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& r
     return lhs;
 }
 
-TMulNode::TMulNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
+TMatMulNode::TMatMulNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
     : TNodeBase(CalculateMeta(lhs->GetMeta(), rhs->GetMeta()), {lhs, rhs})
 { }
 
-int64_t TMulNode::GetBufferSize() const
+int64_t TMatMulNode::GetBufferSize() const
 {
     auto b = GetParameters().B;
 
     return 3 * Align(b) * sizeof(void*) + Align(GetOutputSize());
 }
 
-void TMulNode::SetBuffer(char* buffer)
+void TMatMulNode::SetBuffer(char* buffer)
 {
     auto b = GetParameters().B;
 
@@ -282,7 +282,7 @@ void TMulNode::SetBuffer(char* buffer)
     TransposedProductBuffer_ = buffer + 3 * Align(b) * sizeof(void*);
 }
 
-TTensorMeta TMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
+TTensorMeta TMatMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
 {
     if (lhs.ValueType != rhs.ValueType) {
         THROW("Different value types", VAR(lhs.ValueType), VAR(rhs.ValueType));
@@ -335,7 +335,7 @@ TTensorMeta TMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& r
     }
 }
 
-void TMulNode::Initialize(IDevice* device)
+void TMatMulNode::Initialize(IDevice* device)
 {
     auto [b, n, m, k] = GetParameters();
 
@@ -354,7 +354,7 @@ void TMulNode::Initialize(IDevice* device)
     device->CopyToDevice(OutputMatrices_, outputMatrices.data(), b * sizeof(char*));
 }
 
-void TMulNode::EvaluateCpu()
+void TMatMulNode::EvaluateCpu()
 {
     auto* lhs = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
     auto* rhs = reinterpret_cast<const float*>(Inputs_[1]->GetOutput());
@@ -375,7 +375,7 @@ void TMulNode::EvaluateCpu()
     }
 }
 
-void TMulNode::EvaluateGpu(const TEvaluationContext& context)
+void TMatMulNode::EvaluateGpu(const TEvaluationContext& context)
 {
     auto [b, n, m, k] = GetParameters();
 
@@ -425,7 +425,7 @@ void TMulNode::EvaluateGpu(const TEvaluationContext& context)
     }
 }
 
-TMulNode::TParameters TMulNode::GetParameters() const
+TMatMulNode::TParameters TMatMulNode::GetParameters() const
 {
     if (Inputs_[0]->GetDimensions() == 1) {
         return TParameters{

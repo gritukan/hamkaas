@@ -402,9 +402,9 @@ def build_model(conf: Config, weights: TransformerWeights):
         xb = hamkaas.RMSNormNode(x, layer_rms_att_weight)
 
         # QKV matmuls for this position
-        q = hamkaas.MulNode(xb, wqs[l])
-        k = hamkaas.MulNode(xb, wks[l])
-        v = hamkaas.MulNode(xb, wvs[l])
+        q = hamkaas.MatMulNode(xb, wqs[l])
+        k = hamkaas.MatMulNode(xb, wks[l])
+        v = hamkaas.MatMulNode(xb, wvs[l])
 
         # Apply RoPE rotation to the q and k vectors for each head
         # q, k [head_count, head_size / 2, 2] * freq_cis_row[head_size / 2, 2] -> [head_count, head_size / 2, 2]
@@ -452,7 +452,7 @@ def build_model(conf: Config, weights: TransformerWeights):
         # [heads, seq_len, head_size]
         k_m = hamkaas.Permute(k_m, [1, 0, 2])
 
-        scores = hamkaas.MulNode(k_m, q_m) # [conf.n_heads, conf.seq_len, 1]
+        scores = hamkaas.MatMulNode(k_m, q_m) # [conf.n_heads, conf.seq_len, 1]
         # if l == 0:
         #    scores.set_debug()
         assert scores.get_shape() == [conf.n_heads, conf.seq_len, 1]
@@ -481,12 +481,12 @@ def build_model(conf: Config, weights: TransformerWeights):
         assert v_m.get_shape() == [conf.n_heads, head_size, conf.seq_len]
 
         scores = hamkaas.ReshapeNode(scores, [conf.n_heads, conf.seq_len, 1])
-        prod = hamkaas.MulNode(v_m, scores) # [conf.n_heads, 1, head_size]
+        prod = hamkaas.MatMulNode(v_m, scores) # [conf.n_heads, 1, head_size]
         prod = hamkaas.ReshapeNode(prod, [conf.n_heads * head_size])
         xb = hamkaas.ReplaceSlice(xb, prod, 0, conf.n_heads * head_size)
 
         # Final matrix multiplication to get the output of the attention
-        xb2 = hamkaas.MulNode(xb, wos[l])
+        xb2 = hamkaas.MatMulNode(xb, wos[l])
 
         # Residual connection back into x
         x = hamkaas.SumNode(x, xb2)
@@ -494,8 +494,8 @@ def build_model(conf: Config, weights: TransformerWeights):
         # FFN rmsnorm
         xb = hamkaas.RMSNormNode(x, rms_ffns[l])
 
-        hb = hamkaas.MulNode(xb, w1s[l])
-        hb2 = hamkaas.MulNode(xb, w3s[l])
+        hb = hamkaas.MatMulNode(xb, w1s[l])
+        hb2 = hamkaas.MatMulNode(xb, w3s[l])
 
         # Apply SiLU activation function (silu(x) = x * sigmoid(x))
         hb = hamkaas.SiLUNode(hb)
@@ -504,7 +504,7 @@ def build_model(conf: Config, weights: TransformerWeights):
         hb = hamkaas.HadamardProductNode(hb, hb2)
 
         # Final matrix multiplication to get the output of the FFN
-        xb = hamkaas.MulNode(hb, w2s[l])
+        xb = hamkaas.MatMulNode(hb, w2s[l])
 
         x = hamkaas.SumNode(x, xb)
     
@@ -512,7 +512,7 @@ def build_model(conf: Config, weights: TransformerWeights):
     #rr = hamkaas.SumNode(rms_final_weight, rms_final_weight)
     x = hamkaas.RMSNormNode(x, rms_final_weight)
     # Classifier into logits
-    logits = hamkaas.MulNode(x, wcls)
+    logits = hamkaas.MatMulNode(x, wcls)
     #logits.set_debug()
     return logits
 

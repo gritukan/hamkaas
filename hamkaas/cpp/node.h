@@ -143,11 +143,11 @@ private:
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
 };
 
-class TMulNode
+class TMatMulNode
     : public TNodeBase
 {
 public:
-    TMulNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
+    TMatMulNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
 
     int64_t GetBufferSize() const override;
     void SetBuffer(char* buffer) override;

@@ -70,7 +70,7 @@ public:
 
         for (const auto& node : Nodes_) {
             std::shared_ptr<fe::graph::Tensor_attributes> tensor;
-            if (auto* matmulNode = dynamic_cast<TMulNode*>(node.get())) {
+            if (auto* matmulNode = dynamic_cast<TMatMulNode*>(node.get())) {
                 auto lhs = getTensor(matmulNode->GetInputs()[0]);
                 auto rhs = getTensor(matmulNode->GetInputs()[1]);
                 std::string name = "matmul_" + std::to_string(nextNodeIndex++);
@@ -352,7 +352,7 @@ std::vector<std::vector<TNodeBasePtr>> GetSubgraphsToFuse(const std::vector<TNod
     }
 
     auto isMatMul = [&] (TNodeBasePtr node) {
-        return dynamic_cast<TMulNode*>(node.get()) != nullptr;
+        return dynamic_cast<TMatMulNode*>(node.get()) != nullptr;
     };
 
     auto isPointwise = [&] (TNodeBasePtr node) {
