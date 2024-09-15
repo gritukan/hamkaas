@@ -69,6 +69,11 @@ void TNodeBase::ReplaceInput(TNodeBasePtr oldInput, TNodeBasePtr newInput)
     }
 }
 
+int64_t TNodeBase::GetConstantMemorySize() const
+{
+    return 0;
+}
+
 int64_t TNodeBase::GetBufferSize() const
 {
     return 0;
@@ -82,6 +87,11 @@ int64_t TNodeBase::GetOutputSize() const
 TNodeBase* TNodeBase::GetOutputOwner() const
 {
     return const_cast<TNodeBase*>(this);
+}
+
+void TNodeBase::SetConstantMemory(char* /*constantMemory*/)
+{
+    // Do nothing.
 }
 
 void TNodeBase::SetBuffer(char* /*buffer*/)
@@ -189,13 +199,13 @@ TPointwiseNode<Operation>::TPointwiseNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
 }
 
 template <EPointwiseOperation Operation>
-int64_t TPointwiseNode<Operation>::GetBufferSize() const
+int64_t TPointwiseNode<Operation>::GetConstantMemorySize() const
 {
     return 2 * GetDimensions() * sizeof(int64_t);
 }
 
 template <EPointwiseOperation Operation>
-void TPointwiseNode<Operation>::SetBuffer(char* buffer)
+void TPointwiseNode<Operation>::SetConstantMemory(char* buffer)
 {
     LhsShape_ = reinterpret_cast<int64_t*>(buffer);
     RhsShape_ = LhsShape_ + GetDimensions();
@@ -340,22 +350,15 @@ TMatMulNode::TMatMulNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
     : TNodeBase(CalculateMeta(lhs->GetMeta(), rhs->GetMeta()), {lhs, rhs})
 { }
 
-int64_t TMatMulNode::GetBufferSize() const
+int64_t TMatMulNode::GetConstantMemorySize() const
 {
-    auto b = GetParameters().B;
-
-    return 3 * Align(b) * sizeof(void*) + Align(GetOutputSize());
+    // (lab3/04): you will probably need to change it if cuBLAS is used.
+    return 0;
 }
 
-void TMatMulNode::SetBuffer(char* buffer)
+void TMatMulNode::SetConstantMemory(char* constantMemory)
 {
-    auto b = GetParameters().B;
-
-    LhsMatrices_ = reinterpret_cast<void**>(buffer);
-    RhsMatrices_ = reinterpret_cast<void**>(buffer + Align(b) * sizeof(void*));
-    OutputMatrices_ = reinterpret_cast<void**>(buffer + 2 * Align(b) * sizeof(void*));
-
-    TransposedProductBuffer_ = buffer + 3 * Align(b) * sizeof(void*);
+    // (lab3/04): you will probably need to change it if cuBLAS is used.
 }
 
 TTensorMeta TMatMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
@@ -413,21 +416,7 @@ TTensorMeta TMatMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta
 
 void TMatMulNode::Initialize(IDevice* device)
 {
-    auto [b, n, m, k] = GetParameters();
-
-    std::vector<void*> lhsMatrices(b);
-    std::vector<void*> rhsMatrices(b);
-    std::vector<void*> outputMatrices(b);
-
-    for (int index = 0; index < b; ++index) {
-        lhsMatrices[index] = Inputs_[0]->GetOutput() + index * n * k * GetElementSize();
-        rhsMatrices[index] = Inputs_[1]->GetOutput() + index * k * m * GetElementSize();
-        outputMatrices[index] = TransposedProductBuffer_ + index * n * m * GetElementSize();
-    }
-
-    device->CopyToDevice(LhsMatrices_, lhsMatrices.data(), b * sizeof(char*));
-    device->CopyToDevice(RhsMatrices_, rhsMatrices.data(), b * sizeof(char*));
-    device->CopyToDevice(OutputMatrices_, outputMatrices.data(), b * sizeof(char*));
+    // (lab4/03): Your code here: implement the matrix multiplication.
 }
 
 void TMatMulNode::EvaluateCpu()
@@ -453,52 +442,7 @@ void TMatMulNode::EvaluateCpu()
 
 void TMatMulNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    auto [b, n, m, k] = GetParameters();
-
-    float One = 1;
-    float Zero = 0;
-
-    CUBLAS_CHECK_ERROR(cublasSetStream(context.Bootstrap->GetCublasHandle(), context.Stream));
-
-    CUBLAS_CHECK_ERROR(cublasGemmBatchedEx(
-        context.Bootstrap->GetCublasHandle(),
-        CUBLAS_OP_T,
-        CUBLAS_OP_T,
-        n,
-        m,
-        k,
-        &One,
-        LhsMatrices_,
-        CUDA_R_32F,
-        k,
-        RhsMatrices_,
-        CUDA_R_32F,
-        m,
-        &Zero,
-        OutputMatrices_,
-        CUDA_R_32F,
-        n,
-        b,
-        CUDA_R_32F,
-        CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-
-    for (int index = 0; index < b; ++index) {
-        auto* inputAddress = TransposedProductBuffer_ + index * n * m * sizeof(float);
-        CUBLAS_CHECK_ERROR(cublasSgeam(
-            context.Bootstrap->GetCublasHandle(),
-            CUBLAS_OP_T,
-            CUBLAS_OP_T,
-            m,
-            n,
-            reinterpret_cast<float*>(&One),
-            reinterpret_cast<float*>(inputAddress),
-            n,
-            reinterpret_cast<float*>(&Zero),
-            reinterpret_cast<float*>(inputAddress),
-            n,
-            reinterpret_cast<float*>(GetOutput() + index * n * m * sizeof(float)),
-            m));
-    }
+    // (lab4/03): Your code here: implement the matrix multiplication.
 }
 
 TMatMulNode::TParameters TMatMulNode::GetParameters() const
@@ -726,39 +670,25 @@ void TPermuteNode::EvaluateCpu()
     }
 }
 
-int64_t TPermuteNode::GetBufferSize() const
+int64_t TPermuteNode::GetConstantMemorySize() const
 {
-    return 3 * GetDimensions() * sizeof(int64_t);
+    // (lab3/04): you will probably need to change it.
+    return 0;
 }
 
-void TPermuteNode::SetBuffer(char* buffer)
+void TPermuteNode::SetConstantMemory(char* buffer)
 {
-    InputShape_ = reinterpret_cast<int64_t*>(buffer);
-    OutputShape_ = InputShape_ + GetDimensions();
-    PermutationPtr_ = OutputShape_ + GetDimensions();
+    // (lab3/04): you will probably need to change it.
 }
 
 void TPermuteNode::Initialize(IDevice* device)
 {
-    device->CopyToDevice(InputShape_, Inputs_[0]->GetShape().data(), GetDimensions() * sizeof(int64_t));
-    device->CopyToDevice(OutputShape_, GetShape().data(), GetDimensions() * sizeof(int64_t));
-    device->CopyToDevice(PermutationPtr_, Permutation_.data(), GetDimensions() * sizeof(int64_t));
+    // (lab3/04): you will probably need to change it.
 }
 
 void TPermuteNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
-    auto* output = reinterpret_cast<float*>(GetOutput());
-
-    Permute(
-        context.Stream,
-        input,
-        output,
-        InputShape_,
-        OutputShape_,
-        PermutationPtr_,
-        GetDimensions(),
-        GetElementCount());
+    // (lab3/04): your code here: implement the tensor permutation.
 }
 
 TTensorMeta TPermuteNode::CalculateMeta(const TTensorMeta& input, const std::vector<int64_t>& permutation)
@@ -862,19 +792,7 @@ void TReplaceSliceNode::EvaluateCpu()
 
 void TReplaceSliceNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    auto* input = reinterpret_cast<float*>(Inputs_[0]->GetOutput());
-    auto* replacement = reinterpret_cast<const float*>(Inputs_[1]->GetOutput());
-    auto* begin = reinterpret_cast<const int64_t*>(Inputs_[2]->GetOutput());
-    auto* end = reinterpret_cast<const int64_t*>(Inputs_[3]->GetOutput());
-
-    ReplaceSlice(
-        context.Stream,
-        input,
-        Inputs_[0]->GetElementCount(),
-        replacement,
-        Inputs_[1]->GetElementCount(),
-        begin,
-        end);
+    // (lab3/04): your code here: implement the slice replacement.
 }
 
 TSlicedSoftmaxNode::TSlicedSoftmaxNode(TNodeBasePtr input, TNodeBasePtr prefixSize)

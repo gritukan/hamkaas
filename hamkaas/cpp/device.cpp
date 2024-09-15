@@ -21,25 +21,12 @@ public:
         memcpy(dest, src, size);
     }
 
-    void Synchronize() const override
-    { }
-
     char* DeviceMalloc(int64_t size) const override
     {
         return static_cast<char*>(malloc(size));
     }
 
     void DeviceFree(char* ptr) const override
-    {
-        free(ptr);
-    }
-
-    char* HostMalloc(int64_t size) const override
-    {
-        return static_cast<char*>(malloc(size));
-    }
-
-    void HostFree(char* ptr) const override
     {
         free(ptr);
     }
@@ -60,55 +47,23 @@ public:
 
     void CopyToDevice(void* dest, const void* src, int64_t size, bool sync) const override
     {
-        CUDA_CHECK_ERROR(cudaMemcpyAsync(dest, src, size, cudaMemcpyHostToDevice));
-        if (sync) {
-            Synchronize();
-        }
+        // (lab4/02): Your code here: copy memory to device.
     }
 
     void CopyToHost(void* dest, const void* src, int64_t size, bool sync) const override
     {
-        CUDA_CHECK_ERROR(cudaMemcpy(dest, src, size, cudaMemcpyDeviceToHost));
-        if (sync) {
-            Synchronize();
-        }
-    }
-
-    void Synchronize() const override
-    {
-        CUDA_ASSERT(cudaStreamSynchronize(Stream_));
+        // (lab4/02): Your code here: copy memory to host.
     }
 
     char* DeviceMalloc(int64_t size) const override
     {
-        char* ptr;
-        auto error = cudaMalloc(&ptr, size);
-        if (error != cudaSuccess) {
-            return nullptr;
-        }
-
-        return ptr;
+        // (lab4/02): Your code here: allocate device memory.
+        return nullptr;
     }
 
     void DeviceFree(char* ptr) const override
     {
-        CUDA_ASSERT(cudaFree(ptr));
-    }
-
-    char* HostMalloc(int64_t size) const override
-    {
-        char* ptr;
-        auto error = cudaMallocHost(&ptr, size);
-        if (error != cudaSuccess) {
-            return nullptr;
-        }
-
-        return ptr;
-    }
-
-    void HostFree(char* ptr) const override
-    {
-        CUDA_ASSERT(cudaFreeHost(ptr));
+        // (lab4/02): Your code here: free device memory.
     }
 
 private:

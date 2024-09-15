@@ -44,6 +44,8 @@ public:
 
     // Memory management.
 
+    // Number of constant memory required for the node.
+    virtual int64_t GetConstantMemorySize() const;
     // Number of bytes required during evaluation.
     virtual int64_t GetBufferSize() const;
     // Number of bytes required for output.
@@ -52,6 +54,9 @@ public:
     // Typically this is the node itself, but for example reshape node
     // does not allocate any memory and just returns the input node with new meta.
     virtual TNodeBase* GetOutputOwner() const;
+
+    // Sets the pointer to the constant memory for the node.
+    virtual void SetConstantMemory(char* constantMemory);
 
     // Sets the pointer to the buffer that can be used during node evaluation.
     virtual void SetBuffer(char* buffer);
@@ -131,8 +136,8 @@ public:
     explicit TPointwiseNode(TNodeBasePtr lhs);
     TPointwiseNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
 
-    int64_t GetBufferSize() const override;
-    void SetBuffer(char* buffer) override;
+    int64_t GetConstantMemorySize() const override;
+    void SetConstantMemory(char* constantMemory) override;
 
     void Initialize(IDevice* device) override;
 
@@ -192,8 +197,8 @@ class TMatMulNode
 public:
     TMatMulNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
 
-    int64_t GetBufferSize() const override;
-    void SetBuffer(char* buffer) override;
+    int64_t GetConstantMemorySize() const override;
+    void SetConstantMemory(char* constantMemory) override;
 
     void Initialize(IDevice* device) override;
 
@@ -201,12 +206,6 @@ public:
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    void** LhsMatrices_ = nullptr;
-    void** RhsMatrices_ = nullptr;
-    void** OutputMatrices_ = nullptr;
-
-    char* TransposedProductBuffer_ = nullptr;
-
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
 
     struct TParameters
@@ -281,8 +280,8 @@ class TPermuteNode
 public:
     TPermuteNode(TNodeBasePtr input, std::vector<int64_t> permutation);
 
-    int64_t GetBufferSize() const override;
-    void SetBuffer(char* buffer) override;
+    int64_t GetConstantMemorySize() const override;
+    void SetConstantMemory(char* buffer) override;
 
     void Initialize(IDevice* device) override;
 
@@ -291,12 +290,6 @@ public:
 
 private:
     const std::vector<int64_t> Permutation_;
-
-    int64_t* InputShape_;
-    int64_t* OutputShape_;
-    int64_t* PermutationPtr_;
-
-    bool Initialized_ = false;
 
     static TTensorMeta CalculateMeta(const TTensorMeta& input, const std::vector<int64_t>& permutation);
 };

@@ -36,13 +36,7 @@ TModel::~TModel()
         CUDA_ASSERT(cudaGraphExecDestroy(GraphExec_));
     }
 
-    if (MemoryPool_) {
-        if (UseGpu_) {
-            CUDA_ASSERT(cudaFree(MemoryPool_));
-        } else {
-            free(MemoryPool_);
-        }
-    }
+    // (lab4/02): Your code here: free allocated memory.
 }
 
 void TModel::Compile(
@@ -143,69 +137,7 @@ void TModel::BuildEvaluationOrder()
 
 void TModel::AllocateMemory()
 {
-    // For each non-output node, stores a node such after its evaluation
-    // the memory for its output can be freed.
-    std::unordered_map<TNodeBase*, TNodeBase*> lastNodeOccurence;
-    for (auto* node : EvaluationOrder_) {
-        for (auto inputPtr : node->GetInputs()) {
-            auto* input = inputPtr.get();
-            // Input node may not be the owner of the output.
-            // Let's find the real owner.
-            while (input && input->GetOutputOwner() != input) {
-                input = input->GetOutputOwner();
-            }
-            if (input) {
-                lastNodeOccurence[input] = node;
-            }
-        }
-    }
-
-    // For node stores the list of outputs that should be freed after its evaluation.
-    std::unordered_map<TNodeBase*, std::vector<TNodeBase*>> outputsToFree;
-    for (const auto& [output, owner] : lastNodeOccurence) {
-        outputsToFree[owner].push_back(output);
-    }
-
-    std::unordered_map<TNodeBase*, int64_t> bufferMemory;
-    std::unordered_map<TNodeBase*, int64_t> outputMemory;
-
-    TAllocator allocator;
-
-    // Output buffers for input nodes should be available at the beginning
-    // of the model evaluation.    
-    for (auto* inputNode : InputNodes_) {
-        auto inputSize = inputNode->GetOutputSize();
-        auto inputPtr = allocator.Allocate(inputSize);
-        assert(outputMemory.emplace(inputNode, inputPtr).second);
-    }
-
-    for (auto* node : EvaluationOrder_) {
-        auto bufferSize = node->GetBufferSize();
-        auto bufferPtr = allocator.Allocate(bufferSize);
-        assert(bufferMemory.emplace(node, bufferPtr).second);
-
-        auto outputSize = node->GetOutputSize();
-        auto outputPtr = allocator.Allocate(outputSize);
-        assert(outputMemory.emplace(node, outputPtr).second);
-
-        // Buffer may be released immediately after evaluation.
-        allocator.Free(bufferPtr, bufferSize);
-
-        // Free outputs that are not needed anymore.
-        for (auto* output : outputsToFree[node]) {
-            allocator.Free(outputMemory[output], output->GetOutputSize());
-        }
-    }
-
-    MemoryPool_ = Device_->DeviceMalloc(allocator.GetWorkingSetSize());
-
-    for (auto* node : InputNodes_) {
-        node->SetOutput(MemoryPool_ + outputMemory[node]);
-    }
-    for (auto* node : EvaluationOrder_) {
-        node->SetBuffer(MemoryPool_ + bufferMemory[node]);
-        node->SetOutput(MemoryPool_ + outputMemory[node]);
-    }
+    // (lab4/02): Your code here: allocate output and buffer memory for all nodes.
 }
 
 void TModel::FillConstants(const std::unordered_map<std::string, const char*>& constants)

@@ -103,9 +103,16 @@ Unfortunately, the compiler is not ready yet to run anything, so you cannot test
 
 Just like in the previous lab, in HamKaas we will take an advantage of the model being static and will allocate all the required memory in advance. This will allow us to avoid memory allocations during the inference and will make code simpler and faster because all addresses will be known in advance.
 
-HamKaas uses the following memory model for the graph execution. Each node has two kind of the allocated memory: the output memory and the buffer memory. The output memory is the memory where the result of the node is stored. The buffer memory is the memory that is used for the intermediate computations of the node. By default, for every node the output memory size is determined by the shape of its output tensor. However, some nodes are "transparent" and return the pointer to the input memory. For example, the `ReshapeNode` is transparent since it just changes the tensor metadata without changing the data. Another example of the transparent node is the `ReplaceSliceNode` that changes the input tensor but returns the pointer to the input so does not have the output memory.
+HamKaas uses the following memory model for the graph execution. Each node has three kinds of the allocated memory: the constant memory, the output memory and the buffer memory.
+
+The constant memory stores the node-related data that does not change during all the model execution lifetime (e.g., storage of the constant node or some auxiliary data like tensor shapes).
+
+The output memory is the memory where the result of the node is stored. The buffer memory is the memory that is used for the intermediate computations of the node. By default, for every node the output memory size is determined by the shape of its output tensor. However, some nodes are "transparent" and return the pointer to the input memory. For example, the `ReshapeNode` is transparent since it just changes the tensor metadata without changing the data. Another example of the transparent node is the `ReplaceSliceNode` that changes the input tensor but returns the pointer to the input so does not have the output memory.
+
+The buffer memory is the memory used for intermediate computation. It is required during the node evaluation but is not needed at another time.
 
 Memory allocator is closely related to the evaluation control flow. Consider some two nodes $A$ and $B$ of the model. If $A$ and $B$ are never executed concurrently then the memory allocator can take advantage of this fact and reuse the buffer memory of $A$ for the buffer of $B$. Generally, the memory allocation should preserve two rules:
+- Constant memory of the node should be available and unchanged during the model lifetime.
 - Buffer memory of the node should be available during the execution of the node.
 - Ouptut memory of the node should be available during the execution of the nodes that use the output of the node.
 
@@ -123,11 +130,42 @@ After the allocator is completed, you can use it to allocate buffer and output m
 
 `EvaluationOrder_` is the vector that contains all non-input nodes in the topological order. During the inference, the nodes are executed in this order. Remember, that HamKaas never executes two nodes concurrently. `InputNodes_` is the vector that contains all input nodes. The following methods of the `TNodeBase` are needed for the memory allocations:
 
+- `GetConstantMemorySize()` returns the amount of constant memory required for the node.
 - `GetBufferSize()` returns the amount of buffer memory required for the node.
 - `GetOutputSize()` returns the amount of output memory required for the node.
-- `SetBuffer(char* buffer)`, `SetOutput(char* output)` set the buffers for the node.
+- `SetConstantMemory(char* constantMemory)`, `SetBuffer(char* buffer)`, `SetOutput(char* output)` set the buffers for the node.
 - `GetOutputOwner()` returns the node that allocated the memory for the output of this node. Typically, it is the node itself (so, `node->GetOutputOwner() == node`) but for the aforementioned transparent nodes it can be other node. For example if there is a `MatMulNode` and `ReshapeNode` that takes the result of the `MatMulNode` as an input, then the `ReshapeNode` should return the `MatMulNode` as the output owner. This method is used to understand when some output memory can be freed.
 
-To allocate the real memory for the nodes, you need to call `Device_->DeviceMalloc` method. `Device` is the abstraction used in HamKaas to encapsulate some device-specific operations. Right now, there is only one device - `CpuDevice` defined in `device.h` that is used in case of the CPU execution. You will implement `CudaDevice` for the GPU execution later.
+To allocate the real memory for the nodes, you need to call `Device_->DeviceMalloc` method. `Device` is the abstraction used in HamKaas to encapsulate some device-specific operations. Right now, there is only one device - `CpuDevice` defined in `device.h` that is used in case of the CPU execution. You will implement `CudaDevice` for the GPU execution later. Do not forget to clean up the memory in the destructor!
 
 When you are ready, compile the `libhamkaas.so` library by running `make debug` in the `hamkaas/cpp` directory. Then you can test your implementation by running the tests in the `hamkaas/python/tests` directory by running `pytest -sv -k TestCompilerCpu`. This will run all the HamKaas tests with models executing on the CPU. If all tests are passed, good job! Your compiler is now working!
+
+## 03: Going CUDA!
+
+Alright, our compiler is now able to execute the models on the CPU. Now, let's make it work on the GPU!
+
+The first thing you need to do is to implement the `TCudeDevice` class in the `device.cpp` file. You should be already familiar with functions used for memory operations. Note, that stream is passed in order to `cudaMemcpyAsync` use it. Pay attention to the `sync` parameter of copy functions. In case if `sync = true` you should synchronize the stream after the copy operation using `cudaStreamSynchronize`.
+
+Rebuild `libhamkaas.so` library and run CUDA tests by running `pytest -sv -k TestCompilerCuda` in the `hamkaas/python/tests` directory. You should get `test_constant_node`, `test_input_node`, `test_invalid_input`, `test_buffer_tensor`, `test_slice_node` and `test_reshape` working. Other tests should not work yet and this is normal since you did not write GPU implementations of the nodes yet.
+
+Now you will implement the missing nodes. I suggest implementing them one-by-one and testing them after each implementation.
+
+Let's start with the `TPointwiseNode`, this is the base class for `SumNode`, `HadamardProductNode`, `ReLUNode` and `SiLUNode`. The common base is extracted because these nodes are pretty similar in terms of the implementation, they are all element-wise operations. The difference between these nodes is the arity: `SumNode` and `HadamardProductNode` are binary operations while `ReLUNode` and `SiLUNode` are unary operations.
+
+Your goal is to implement `Pointwise` function in the `kernels.cu` file. You can find the usage of this function in the `TPointwiseNode::EvaluateGpu` function. Implementation of the `Pointwise` function should be similar to the kernels you've implemented in the previous labs. Pay attention to the broadcasting. You can find the reference CPU implementation in the `TPoinwiseNode::EvaluateCpu` function. For the performance reasons you can implement two kernels for pointwise operations: one for the case if broadcasting is needed and one for the case if it is not needed however this is completely optional. When you are ready, rebuild the library and run the CUDA tests. You should find `test_sum`, `test_relu`, `test_silu`, `test_hadamard_product` and `test_fibonacci` working.
+
+The next step is `MatMulNode`. There are two options here. You can implement everything yourself in `kernels.h`/`kernels.cu` files or you can use cuBLAS library as we did before. The first one should be pretty straightforward while the second one is more challenging.
+
+If you will use cuBLAS for this task, you will need `cublasGemmBatchedEx` function. Note, that cuBLAS uses column-major order, so you will need to use `CUBLAS_OP_T` for both matrices and the result will be transposed as well, so you will need to transpose it back. This can be done using `cublasSgeam` function (take a look at the documentation to find out how). To use cuBLAS you will also need to allocate some intermediate memory on GPU (for example, for the array of pointers to matrices). To do it, set the proper intermediate memory amount in `GetBufferSize` method of the `TMatMulNode` class and get the pointer to the memory in the `SetBuffer` method. Note, that addresses of the outputs of the input nodes are unknown during the `SetBuffer` call, so initialize the intermediate memory in the `Initialize` method. You can find example of the intermediate memory management in the `PointwiseNode` where the intermediate memory is used to store shape of inputs.
+
+Also, note that all the evaluation of GPU model is done within the stream in order to record it into the CUDA graph, so you will need to pass the stream from the `TEvaluationContext` to the cuBLAS using `cublasSetStream` function.
+
+When you are ready, rebuild the library and run the CUDA tests. You should find `test_matmul` working.
+
+Our next destination is the `TPermuteNode` that changes the order of the dimensions of the tensor. As with the `MatMulNode` there are two options here. The first one is to implement the kernel yourself: each thread of the kernel should copy one value from the input tensor to the output tensor according to the permutation. The second (and more challenging) one is to use efficient implementation by NVIDIA that is availabe in the [cuTENSOR](https://docs.nvidia.com/cuda/cutensor/latest/index.html) library. To apply the permutation to tensor you can use [cutensorPermute](https://docs.nvidia.com/cuda/cutensor/latest/api/cutensor.html#cutensorpermute) function.
+
+After you finish with the `TPermuteNode` you can run the tests again. You should find `test_permute` working.
+
+The final one is the `TReplaceSliceNode`. One of the efficient ways to copy the data within the GPU is to use `cudaMemcpy` with the `cudaMemcpyDeviceToDevice` flag. However, this requires to have static addresses of the source and destination memory in order to fuse this operation into the CUDA graph. In our case this is false since the begin and end offsets are input parameters. So, in order to implement this node you will need to implement the kernel that copies the data. Write this kernel in `kernels.h/kernels.cu` and use it in `TReplaceSliceNode::EvaluateGpu` function. When you are ready, rebuild the library and run the CUDA tests. You should find all the tests finally working.
+
+Congratulations! You have completed this lab and now your HamKaas complier is able to execute the models on the CPU and GPU!

@@ -14,9 +14,6 @@ public:
 
     // Returns the amount of memory required to satisfy all allocations.
     int64_t GetWorkingSetSize() const;
-
-private:
-    int64_t Offset_ = 0;
 };
 
 } // namespace NHamKaas
