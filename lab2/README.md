@@ -127,13 +127,13 @@ These accesses are not coalesced, so this is the reason of wasted memory bandwid
 How to fix the problem? Change `AddVectorsKernelOpt` to fix the problem.
 
 <details>
+
 <summary> Answer </summary>
 
 Ensure that all threads in a warp access consecutive memory locations during a step. Consider a warp of the first 32 threads. During the first instruction we want them to access elements $0, 1, 2, \ldots, 31$. During the second instruction we want them to access elements $p, p + 1, p + 2, \ldots, p + 31$ for some $p$ and so on. How to implement that?
 
 <details>
 <summary> Solution </summary>
-```cpp
 int threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
 if (threadIndex >= k) {
     return;
@@ -142,8 +142,8 @@ if (threadIndex >= k) {
 for (int index = threadIndex; index < n; index += k) {
     out[index] = inA[index] + inB[index];
 }
-```
-</>
+
+</details>
 
 </details>
 
