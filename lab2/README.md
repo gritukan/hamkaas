@@ -375,9 +375,30 @@ After you added all the nodes to the graph, you can compile it with `cudaGraphIn
 
 Implement `DoFast` function to speed up the algorithm. Uncomment its usage in `main` and run the code. You should see that the execution time is decreased.
 
-## 06: Kernel Fusion
+## 06: Async Memory Operations
 
-Open the file `06.cu`. Look at the `DoGraph` function and try to understand what it does.
+In previous task, we used streams and graphs to optimize kernel launches, however it is also possible to optimize memory operations in the same way.
+
+Open the file `06.cu`. Look at the `DoStream` and `DoGraph` functions and try to understand what they do.
+
+<details>
+<summary> Answer </summary>
+They are just performing vector addition. `DoStream` does it with streams and `DoGraph` does it with graphs.
+</details>
+
+Open the nsys profiler and look at the `DoStream` execution. You will find expected two `cudaMemcpy` then the kernel execution and then another `cudaMemcpy` to copy the result back to the host. Just like with the case of many kernels, there are unnecessary barriers here. There is no need to wait for the first `cudaMemcpy` to finish before starting the second. Also, we perform some GPU->CPU->GPU ping-pong after the second `cudaMemcpy` which can be optimizer in some stream-like way just like we did with the kernel launches.
+
+To optimize it we can use [cudaMemcpyAsync](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__MEMORY.html#group__CUDART__MEMORY_1g85073372f776b4c4d5f89f7124b7bf79) function. It is similar to `cudaMemcpy` but it does not block the CPU thread and returns immediately. It accepts the stream as a last argument and has the same semantics as in the case of kernel launches: all the actions in the stream are executed in order but different streams can be executed concurrently.
+
+Try to rewrite `DoStream` function to use `cudaMemcpyAsync` instead of `cudaMemcpy`. Since there are only two copies in the code, you should not necessarily find the performance improvement, but it is more visible in the case of many copies.
+
+Now let's try to optimize the `DoGraph` function. It is pretty the same as in the `DoStream` case. Unlike `cudaMemcpy` the `cudaMemcpyAsync` function can be captured during the stream recording, so you can fuse both kernels and memory operations to the graph. Try to rewrite `DoGraph` function to use `cudaMemcpyAsync` instead of `cudaMemcpy` and execute `cudaMemcpyAsync` during the graph recording. Run the code, you should see a small performance improvement.
+
+Here we again take an advantage of the static memory layout and model predictability. Since we know all operations and memory addresses in advance, we can build a static graph of the computation prior to the execution.
+
+## 07: Kernel Fusion
+
+Open the file `07.cu`. Look at the `DoGraph` function and try to understand what it does.
 
 <details>
 <summary> Answer </summary>
@@ -409,13 +430,13 @@ You can see the load and store commands both in the source code and low-level SA
 
 Also it's worth mentioning what is the difference between SASS and PTX code. PTX (Parallel Thread Execution) is a higher level assembly language that your C++ code is compiled to. It is usually more readable and portable between different architectures. SASS (Streaming Assembler) is a low-level assembly language that is executed by the GPU. It is compiled from PTX and is specific to the architecture of the GPU. By default, PTX is converted into SASS in the runtime using JIT (just-in-time) complitation. However, by using `nvcc` with the `-gencode` flag you can compile your code directly to SASS but the resulting binary will be less portable.
 
-## 07: Inline Assembly
+## 08: Inline Assembly
 
 This task is optional and mostly for fun.
 
 Any low-level course is incomplete without writing something in assembly :)
 
-In this task, you will write some inline PTX assembly. Open the file `07.cu` and look at `DoPtx` function. Some job is already done for you. The element `a[index]` is stored into the register `%1`, `b[index]` is stored into the register `%2` and after the execution of the assembly code `c[index]` will be assigned to the value of the register `%0`. All you need to do is to write some arithmetics on assembly.
+In this task, you will write some inline PTX assembly. Open the file `08.cu` and look at `DoPtx` function. Some job is already done for you. The element `a[index]` is stored into the register `%1`, `b[index]` is stored into the register `%2` and after the execution of the assembly code `c[index]` will be assigned to the value of the register `%0`. All you need to do is to write some arithmetics on assembly.
 
 When working with PTX assembly, it's a good idea to take a look at the [PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html) to understand the available instructions. You probably will find useful [integer mul](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#integer-arithmetic-instructions-mul) and [integer add](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#integer-arithmetic-instructions-add) instructions. Good luck!
 
@@ -423,7 +444,7 @@ After you finished with the assembly code, run the code and check if the result 
 
 Note, that you should really rarely use inline assembly in your code. It is hard to write, hard to read and modern compilers are really smart. Use inline assembly if you really see that something can be done much better than the compiler does it (and you failed to convince the compiler to do it).
 
-## 08: The Numbers Every GPU Programmer Should Know
+## 09: The Numbers Every GPU Programmer Should Know
 
 Congratulations! You have solved some problems and got some experience with GPU performance and profiling tools.
 

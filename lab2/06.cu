@@ -4,38 +4,75 @@
 #include <vector>
 #include <iostream>
 
-__global__ void BiasKernel(float* a, float* w, int n)
+__global__ void AddKernel(int64_t* a, int64_t* b, int64_t* c, int64_t n)
 {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int64_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= n) {
         return;
     }
 
-    a[index] += w[index];
+    c[index] = a[index] + b[index];
 }
 
-__global__ void SiLUKernel(float* a, int n)
-{
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index >= n) {
-        return;
-    }
-
-    a[index] = a[index] / (1.0 + exp(-a[index]));
-}
-
-// Your code here: fused kernel.
-
-void DoGraph(float* a, float* w, int n)
+void DoStream(int64_t* a, int64_t* b, int64_t* c, int64_t n)
 {
     cudaStream_t stream;
     CUDA_CHECK_ERROR(cudaStreamCreate(&stream));
 
+    int64_t* gpuA;
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuA, n * sizeof(int64_t)));
+
+    int64_t* gpuB;
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuB, n * sizeof(int64_t)));
+
+    int64_t* gpuC;
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuC, n * sizeof(int64_t)));
+
+    for (int i = 0; i < 5; i++) {
+        TCudaEventTimer timer;
+        timer.Start();
+
+        CUDA_CHECK_ERROR(cudaMemcpy(gpuA, a, n * sizeof(int64_t), cudaMemcpyHostToDevice));
+        CUDA_CHECK_ERROR(cudaMemcpy(gpuB, b, n * sizeof(int64_t), cudaMemcpyHostToDevice));
+
+        constexpr int ThreadsPerBlock = 256;
+        AddKernel<<<(n + ThreadsPerBlock - 1) / ThreadsPerBlock, ThreadsPerBlock, 0, stream>>>(gpuA, gpuB, gpuC, n);
+
+        CUDA_CHECK_ERROR(cudaMemcpy(c, gpuC, n * sizeof(int64_t), cudaMemcpyDeviceToHost));
+
+        std::cout << "Stream: time=" << timer.Stop() << "ms" << std::endl;
+    }
+
+    for (int64_t i = 0; i < n; ++i) {
+        assert(c[i] == a[i] + b[i]);
+    }
+
+    CUDA_CHECK_ERROR(cudaStreamSynchronize(stream));
+    CUDA_CHECK_ERROR(cudaStreamDestroy(stream));
+
+    CUDA_CHECK_ERROR(cudaFree(gpuA));
+    CUDA_CHECK_ERROR(cudaFree(gpuB));
+    CUDA_CHECK_ERROR(cudaFree(gpuC));
+}
+
+void DoGraph(int64_t* a, int64_t* b, int64_t* c, int64_t n)
+{
+    cudaStream_t stream;
+    CUDA_CHECK_ERROR(cudaStreamCreate(&stream));
+
+    int64_t* gpuA;
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuA, n * sizeof(int64_t)));
+
+    int64_t* gpuB;
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuB, n * sizeof(int64_t)));
+
+    int64_t* gpuC;
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuC, n * sizeof(int64_t)));
+
     CUDA_CHECK_ERROR(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
 
     constexpr int ThreadsPerBlock = 256;
-    BiasKernel<<<(n + ThreadsPerBlock - 1) / ThreadsPerBlock, ThreadsPerBlock, 0, stream>>>(a, w, n);
-    SiLUKernel<<<(n + ThreadsPerBlock - 1) / ThreadsPerBlock, ThreadsPerBlock, 0, stream>>>(a, n);
+    AddKernel<<<(n + ThreadsPerBlock - 1) / ThreadsPerBlock, ThreadsPerBlock, 0, stream>>>(gpuA, gpuB, gpuC, n);
 
     cudaGraph_t graph;
     CUDA_CHECK_ERROR(cudaStreamEndCapture(stream, &graph));
@@ -43,12 +80,16 @@ void DoGraph(float* a, float* w, int n)
     cudaGraphExec_t graphExec;
     CUDA_CHECK_ERROR(cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0));
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 5; i++) {
         TCudaEventTimer timer;
         timer.Start();
 
-        CUDA_CHECK_ERROR(cudaGraphLaunch(graphExec, 0));
-        CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+        CUDA_CHECK_ERROR(cudaMemcpy(gpuA, a, n * sizeof(int64_t), cudaMemcpyHostToDevice));
+        CUDA_CHECK_ERROR(cudaMemcpy(gpuB, b, n * sizeof(int64_t), cudaMemcpyHostToDevice));
+
+        CUDA_CHECK_ERROR(cudaGraphLaunch(graphExec, stream));
+
+        CUDA_CHECK_ERROR(cudaMemcpy(c, gpuC, n * sizeof(int64_t), cudaMemcpyDeviceToHost));
 
         std::cout << "Graph: time=" << timer.Stop() << "ms" << std::endl;
     }
@@ -56,40 +97,25 @@ void DoGraph(float* a, float* w, int n)
     CUDA_CHECK_ERROR(cudaGraphExecDestroy(graphExec));
     CUDA_CHECK_ERROR(cudaGraphDestroy(graph));
     CUDA_CHECK_ERROR(cudaStreamDestroy(stream));
-}
 
-void DoFused(float* a, float* w, int n)
-{
-    for (int it = 0; it < 3; ++it) {
-        TCudaEventTimer timer;
-        timer.Start();
-
-        // Your code here: run fused kernel.
-
-        CUDA_CHECK_ERROR(cudaDeviceSynchronize());
-
-        std::cout << "Fused: time=" << timer.Stop() << "ms" << std::endl;
-    }
+    CUDA_CHECK_ERROR(cudaFree(gpuA));
+    CUDA_CHECK_ERROR(cudaFree(gpuB));
+    CUDA_CHECK_ERROR(cudaFree(gpuC));
 }
 
 int main()
 {
-    constexpr int N = 1 << 30;
-
-    std::vector<float> a(N), w(N);
-    for (int i = 0; i < N; i++) {
-        a[i] = 1.0 * i / 1e6;
-        w[i] = 1.0 * i / 1e6;
+    constexpr int N = 1 << 25;
+    std::vector<int64_t> a(N);
+    std::vector<int64_t> b(N);
+    std::vector<int64_t> c(N);
+    for (int i = 0; i < N; ++i) {
+        a[i] = i + 1;
+        b[i] = 3 * i - 17;
     }
 
-    float* gpuA;
-    CUDA_CHECK_ERROR(cudaMalloc(&gpuA, N * sizeof(float)));
-    CUDA_CHECK_ERROR(cudaMemcpy(gpuA, a.data(), N * sizeof(float), cudaMemcpyHostToDevice));
+    DoStream(a.data(), b.data(), c.data(), N);
+    DoGraph(a.data(), b.data(), c.data(), N);
 
-    float* gpuW;
-    CUDA_CHECK_ERROR(cudaMalloc(&gpuW, N * sizeof(float)));
-    CUDA_CHECK_ERROR(cudaMemcpy(gpuW, w.data(), N * sizeof(float), cudaMemcpyHostToDevice));
-
-    DoGraph(gpuA, gpuW, N);
-    // DoFused(gpuA, gpuW, N);
+    return 0;
 }

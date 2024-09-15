@@ -4,76 +4,92 @@
 #include <vector>
 #include <iostream>
 
-__global__ void Do(int* a, int* b, int* c, int n)
+__global__ void BiasKernel(float* a, float* w, int n)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= n) {
         return;
     }
 
-    c[index] = 3 * a[index] + b[index];
+    a[index] += w[index];
 }
 
-__global__ void DoPtx(int* a, int* b, int* c, int n)
+__global__ void SiLUKernel(float* a, int n)
 {
     int index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index >= n) {
         return;
     }
 
-    asm("Your Code Here"
-        : "=r"(c[index])
-        : "r"(a[index])
-        , "r"(b[index]));
+    a[index] = a[index] / (1.0 + exp(-a[index]));
+}
+
+// Your code here: fused kernel.
+
+void DoGraph(float* a, float* w, int n)
+{
+    cudaStream_t stream;
+    CUDA_CHECK_ERROR(cudaStreamCreate(&stream));
+
+    CUDA_CHECK_ERROR(cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal));
+
+    constexpr int ThreadsPerBlock = 256;
+    BiasKernel<<<(n + ThreadsPerBlock - 1) / ThreadsPerBlock, ThreadsPerBlock, 0, stream>>>(a, w, n);
+    SiLUKernel<<<(n + ThreadsPerBlock - 1) / ThreadsPerBlock, ThreadsPerBlock, 0, stream>>>(a, n);
+
+    cudaGraph_t graph;
+    CUDA_CHECK_ERROR(cudaStreamEndCapture(stream, &graph));
+
+    cudaGraphExec_t graphExec;
+    CUDA_CHECK_ERROR(cudaGraphInstantiate(&graphExec, graph, NULL, NULL, 0));
+
+    for (int i = 0; i < 3; i++) {
+        TCudaEventTimer timer;
+        timer.Start();
+
+        CUDA_CHECK_ERROR(cudaGraphLaunch(graphExec, 0));
+        CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+
+        std::cout << "Graph: time=" << timer.Stop() << "ms" << std::endl;
+    }
+
+    CUDA_CHECK_ERROR(cudaGraphExecDestroy(graphExec));
+    CUDA_CHECK_ERROR(cudaGraphDestroy(graph));
+    CUDA_CHECK_ERROR(cudaStreamDestroy(stream));
+}
+
+void DoFused(float* a, float* w, int n)
+{
+    for (int it = 0; it < 3; ++it) {
+        TCudaEventTimer timer;
+        timer.Start();
+
+        // Your code here: run fused kernel.
+
+        CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+
+        std::cout << "Fused: time=" << timer.Stop() << "ms" << std::endl;
+    }
 }
 
 int main()
 {
-    constexpr int N = 1 << 20;
-    std::vector<int> a(N);
-    std::vector<int> b(N);
-    std::vector<int> c(N);
+    constexpr int N = 1 << 30;
 
-    for (int i = 0; i < N; ++i) {
-        a[i] = 3 * i - 7;
-        b[i] = i - 19;
+    std::vector<float> a(N), w(N);
+    for (int i = 0; i < N; i++) {
+        a[i] = 1.0 * i / 1e6;
+        w[i] = 1.0 * i / 1e6;
     }
 
-    int* gpuA;
-    CUDA_CHECK_ERROR(cudaMalloc(&gpuA, N * sizeof(int)));
-    CUDA_CHECK_ERROR(cudaMemcpy(gpuA, a.data(), N * sizeof(int), cudaMemcpyHostToDevice));
+    float* gpuA;
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuA, N * sizeof(float)));
+    CUDA_CHECK_ERROR(cudaMemcpy(gpuA, a.data(), N * sizeof(float), cudaMemcpyHostToDevice));
 
-    int* gpuB;
-    CUDA_CHECK_ERROR(cudaMalloc(&gpuB, N * sizeof(int)));
-    CUDA_CHECK_ERROR(cudaMemcpy(gpuB, b.data(), N * sizeof(int), cudaMemcpyHostToDevice));
+    float* gpuW;
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuW, N * sizeof(float)));
+    CUDA_CHECK_ERROR(cudaMemcpy(gpuW, w.data(), N * sizeof(float), cudaMemcpyHostToDevice));
 
-    int* gpuC;
-    CUDA_CHECK_ERROR(cudaMalloc(&gpuC, N * sizeof(int)));
-
-    {
-        constexpr int ThreadsPerBlock = 256;
-        Do<<<(N + ThreadsPerBlock - 1) / ThreadsPerBlock, ThreadsPerBlock>>>(gpuA, gpuB, gpuC, N);
-
-        CUDA_CHECK_ERROR(cudaMemcpy(c.data(), gpuC, N * sizeof(int), cudaMemcpyDeviceToHost));
-        for (int i = 0; i < N; ++i) {
-            assert(c[i] == 3 * a[i] + b[i]);
-        }
-    }
-
-    // Clear output buffer.
-    CUDA_CHECK_ERROR(cudaMemset(gpuC, 0, N * sizeof(int)));
-
-    {
-        constexpr int ThreadsPerBlock = 256;
-        DoPtx<<<(N + ThreadsPerBlock - 1) / ThreadsPerBlock, ThreadsPerBlock>>>(gpuA, gpuB, gpuC, N);
-
-        CUDA_CHECK_ERROR(cudaMemcpy(c.data(), gpuC, N * sizeof(int), cudaMemcpyDeviceToHost));
-        for (int i = 0; i < N; ++i) {
-            assert(c[i] == 3 * a[i] + b[i]);
-        }
-    }
-
-    CUDA_CHECK_ERROR(cudaFree(gpuA));
-    CUDA_CHECK_ERROR(cudaFree(gpuB));
-    CUDA_CHECK_ERROR(cudaFree(gpuC));
+    DoGraph(gpuA, gpuW, N);
+    // DoFused(gpuA, gpuW, N);
 }
