@@ -216,7 +216,7 @@ Open the profile viewer, select any run of the kernel and go to source tab. In c
 
 ![](_imgs/6.png)
 
-For every line of the source code (and resulting PTX assembly code if needed), profiler provides different statistics, for example information about global or local memory accesses or starts of the divergent branches. It's clear that all the divergences are caused by the `if` statement. Spend some time playing with the `Source` tab to get familiar with it.
+For every line of the source code (and resulting SASS assembly code if needed), profiler provides different statistics, for example information about global or local memory accesses or starts of the divergent branches. It's clear that all the divergences are caused by the `if` statement. Spend some time playing with the `Source` tab to get familiar with it.
 
 How to fix the problem? Rewrite `KernelOpt` to avoid warp divergence. Run the code again and see that code runs faster. Rerun the profiling and see that the warp divergence warning is gone.
 
@@ -362,3 +362,37 @@ A node with the kernel (and possibly some dependencies) can be added to the grap
 After you added all the nodes to the graph, you can compile it with `cudaGraphInstantiate` and run it with `cudaGraphLaunch` just like before.
 
 Implement `DoFast` function to speed up the algorithm. Uncomment its usage in `main` and run the code. You should see that the execution time is decreased.
+
+## 06: Kernel Fusion
+
+Open the file `06.cu`. Look at the `DoGraph` function and try to understand what it does.
+
+<details>
+<summary> Answer </summary>
+This is a part of some neural network. It adds bias vector to the input vector and applies the SiLU activation function. To make things faster kernels are executed via CUDA graph.
+</details>
+
+Let's try to make it faster by fusing the kernels, i.e. implementing a single kernel that does the job. Why will it be faster?
+
+<details>
+<summary> Answer </summary>
+Fusing kernels will reduce the number of memory transfers since in case of two kernels there are 4 transfers of the data between global memory and SMs: two for the input and output of the first kernel and two for the input and output of the second kernel.
+
+In case of the single fused kernel there are only two transfers.
+</details>
+
+Fusing the kernels is a popular way to optimize GPU workloads. Try to implement the fused kernel in the `DoFused` function. Uncomment its usage in `main` and run the code. You should see that the execution time is decreased.
+
+Now convience yourself that the size of the data trasfered is reduced by profiling the code with `--section MemoryWorkloadAnalysis_Chart --section MemoryWorkloadAnalysis_Tables --section SpeedOfLight`.
+
+You should see about 12GB of the data transfered for `BiasKernel` (2x input for `a` and `w` and 1x output for the `a`), about 8GB of the data transfered for `SiLUKernel` and about `12GB` of the data transfered for the newly implemented kernel. That is, amount of data transfered was lowered by 40%.
+
+You can also inspect particular kernel and find the instructions that are leading to global memory read or write on the source tab if add `--section SourceCounters` to the `ncu` command.
+
+It looks somewhat like this.
+
+![](_imgs/10.png)
+
+You can see the load and store commands both in the source code and low-level SASS code.
+
+Also it's worth mentioning what is the difference between SASS and PTX code. PTX (Parallel Thread Execution) is a higher level assembly language that your C++ code is compiled to. It is usually more readable and portable between different architectures. SASS (Streaming Assembler) is a low-level assembly language that is executed by the GPU. It is compiled from PTX and is specific to the architecture of the GPU. By default, PTX is converted into SASS in the runtime using JIT (just-in-time) complitation. However, by using `nvcc` with the `-gencode` flag you can compile your code directly to SASS but the resulting binary will be less portable.
