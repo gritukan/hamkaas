@@ -211,3 +211,100 @@ std::vector<double> SiLUGpu(std::vector<double> data)
 ```
 
 </details>
+
+## 06: Max Pooling
+
+In this task, you will implement a max pooling operation kernel. The code for this task is located in `06.cu` file.
+
+Max pooling is a common operation in convolutional neural networks. You can learn about it [here](https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html). In this problem you will implement a kernel of size $4 \times 4$ and stride 1. Formally, for an input matrix $n \times m$ you need to compute an output matrix of the same size satisfying $\text{out}_{i, j} = \max_{i}^{min(n - 1, i + 3)} \max_{j}^{min(m - 1, j + 3)} \text{in}_{i, j}$. Refer to $MaxPoolingCpu$ for a simple implementation.
+
+Hints:
+* You may assume that all matrix elements are non-negative, so you can use zero as a negative infinity.
+* Use 256 threads per block with each block processing $16 \times 16$ submatrix.
+* Use shared memory to store the submatrix and then calculate maximums from values in the shared memory.
+* To find $16 \times 16$ submatrix of the output matrix you need a larger (which size?) submatrix of the input matrix. Try to write a code in such a way that each thread does at most $3$ global memory accesses. If you want to add a little bit challenge, try to do it with $2$ accesses.
+
+When you are done, test your solution with `make 06-test`. If you see `All tests passed`, great job!
+
+<details>
+<summary> Solution spoiler! </summary>
+
+```cpp
+template <int KernelSize, int BlockDimensionSize>
+__global__ void MaxPoolingKernel(double* input, double* output, int n, int m)
+{
+    int globalX = blockIdx.x * blockDim.x + threadIdx.x;
+    int globalY = blockIdx.y * blockDim.y + threadIdx.y;
+    if (globalX >= n || globalY >= m) {
+        return;
+    }
+
+    int localX = threadIdx.x;
+    int localY = threadIdx.y;
+
+    __shared__ double buffer[BlockDimensionSize + KernelSize][BlockDimensionSize + KernelSize];
+
+    buffer[localX][localY] = input[globalX * m + globalY];
+
+    bool needExtraX = (globalX + KernelSize < n && localX + KernelSize >= BlockDimensionSize);
+    if (needExtraX) {
+        buffer[localX + KernelSize][localY] = input[(globalX + KernelSize) * m + globalY];
+    }
+
+    bool needExtraY = (globalY + KernelSize < m && localY + KernelSize >= BlockDimensionSize);
+    if (needExtraY) {
+        buffer[localX][localY + KernelSize] = input[globalX * m + (globalY + KernelSize)];
+    }
+
+    if (needExtraX && needExtraY) {
+        buffer[localX + KernelSize][localY + KernelSize] = input[(globalX + KernelSize) * m + (globalY + KernelSize)];
+    }
+
+    __syncthreads();
+
+    double result = 0.0;
+    for (int dx = 0; dx < KernelSize; dx++) {
+        for (int dy = 0; dy < KernelSize; dy++) {
+            if (globalX + dx < n && globalY + dy < m) {
+                result = max(result, buffer[localX + dx][localY + dy]);
+            }
+        }
+    }
+
+    output[globalX * m + globalY] = result;
+}
+
+std::vector<std::vector<double>> MaxPoolingGpu(std::vector<std::vector<double>> input)
+{
+    int n = input.size();
+    int m = input[0].size();
+
+    double* gpuInput;
+    double* gpuOutput;
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuInput, n * m * sizeof(double)));
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuOutput, n * m * sizeof(double)));
+
+    for (int i = 0; i < n; i++) {
+        CUDA_CHECK_ERROR(cudaMemcpy(gpuInput + i * m, input[i].data(), m * sizeof(double), cudaMemcpyHostToDevice));
+    }
+
+    constexpr int KernelSize = 4;
+    constexpr int BlockDimensionSize = 16;
+
+    dim3 blocks((n + BlockDimensionSize - 1) / BlockDimensionSize, (m + BlockDimensionSize - 1) / BlockDimensionSize);
+    dim3 threads(BlockDimensionSize, BlockDimensionSize);
+    MaxPoolingKernel<KernelSize, BlockDimensionSize><<<blocks, threads>>>(gpuInput, gpuOutput, n, m);
+    CUDA_CHECK_KERNEL();
+
+    std::vector<std::vector<double>> output(n, std::vector<double>(m));
+    for (int i = 0; i < n; i++) {
+        CUDA_CHECK_ERROR(cudaMemcpy(output[i].data(), gpuOutput + i * m, m * sizeof(double), cudaMemcpyDeviceToHost));
+    }
+    CUDA_CHECK_ERROR(cudaFree(gpuInput));
+    CUDA_CHECK_ERROR(cudaFree(gpuOutput));
+
+    return output;
+}
+```
+
+</details>
