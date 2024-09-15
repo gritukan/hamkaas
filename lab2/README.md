@@ -30,6 +30,18 @@ This was just a brief overview of the GPU internals. If you are interested in mo
 
 Take a look at the specification of the GPU you have access to. What is the amount of global memory, number of SM and memory bandwidth? How many CUDA cores are there and what is their frequency? Compare it with the characteristics of the regular CPU and RAM.
 
+## nvcc Optimization Flags
+
+NOTE! All programs in this lab are compiled without GPU code optimizations in `nvcc` to make the profiling easier since most of the optimization options are incompatible with storing debug info required for profilers. However in real programs it is advisable to build your kernels with the optimizer turned on since it can significantly increase the performance.
+
+Here are some of the most important optimization flags in `nvcc`.
+
+`-Xptxas` - allows to specify the options for the GPU assembler. For example, `-Xptxas -O3` will turn on the most of the the resulting GPU code just like regular `-O3` turns on optimizations for CPU code.
+
+`-use_fast_math` - turns on the fast math mode. It allows the compiler to use less accurate but faster math functions. For example, it can replace the `exp` function with the `expf` function that is faster but less accurate.
+
+`-arch` - specifies the architecture of the GPU. It allows the compiler to use the instructions that are available on the specified architecture. For example, `-arch=sm_80` specifies that the code should be compiled for the NVIDIA H100 GPU. If not set, compiler will use the oldest architecture possible leading to the code which is portable between different GPUs but not optimized for the modern ones.
+
 ## NVIDIA Nsight
 
 NVIDIA Nsight is a family of profiling tools by NVIDIA that are used to investigate the performance of the GPU workloads. In this lab, we will look at NVIDIA Nsight Systems and NVIDIA Nsight Compute.
@@ -396,3 +408,18 @@ It looks somewhat like this.
 You can see the load and store commands both in the source code and low-level SASS code.
 
 Also it's worth mentioning what is the difference between SASS and PTX code. PTX (Parallel Thread Execution) is a higher level assembly language that your C++ code is compiled to. It is usually more readable and portable between different architectures. SASS (Streaming Assembler) is a low-level assembly language that is executed by the GPU. It is compiled from PTX and is specific to the architecture of the GPU. By default, PTX is converted into SASS in the runtime using JIT (just-in-time) complitation. However, by using `nvcc` with the `-gencode` flag you can compile your code directly to SASS but the resulting binary will be less portable.
+
+## 07: Inline Assembly
+
+This task is optional and mostly for fun.
+
+Any low-level course is incomplete without writing something in assembly :)
+
+In this task, you will write some inline PTX assembly. Open the file `07.cu` and look at `DoPtx` function. Some job is already done for you. The element `a[index]` is stored into the register `%1`, `b[index]` is stored into the register `%2` and after the execution of the assembly code `c[index]` will be assigned to the value of the register `%0`. All you need to do is to write some arithmetics on assembly.
+
+When working with PTX assembly, it's a good idea to take a look at the [PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html) to understand the available instructions. You probably will find useful [integer mul](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#integer-arithmetic-instructions-mul) and [integer add](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#integer-arithmetic-instructions-add) instructions. Good luck!
+
+After you finished with the assembly code, run the code and check if the result is correct.
+
+Note, that you should really rarely use inline assembly in your code. It is hard to write, hard to read and modern compilers are really smart. Use inline assembly if you really see that something can be done much better than the compiler does it (and you failed to convince the compiler to do it).
+

@@ -24,16 +24,7 @@ __global__ void SiLUKernel(float* a, int n)
     a[index] = a[index] / (1.0 + exp(-a[index]));
 }
 
-__global__ void FusedKernel(float* a, float* w, int n)
-{
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index >= n) {
-        return;
-    }
-
-    float x = a[index] + w[index];
-    a[index] = x / (1.0 + exp(-x));
-}
+// Your code here: fused kernel.
 
 void DoGraph(float* a, float* w, int n)
 {
@@ -69,8 +60,7 @@ void DoFused(float* a, float* w, int n)
         TCudaEventTimer timer;
         timer.Start();
 
-        constexpr int ThreadsPerBlock = 256;
-        FusedKernel<<<(n + ThreadsPerBlock - 1) / ThreadsPerBlock, ThreadsPerBlock>>>(a, w, n);
+        // Your code here: run fused kernel.
 
         CUDA_CHECK_ERROR(cudaDeviceSynchronize());
 
