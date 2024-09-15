@@ -1,5 +1,9 @@
 NVCC = nvcc
+<<<<<<< Updated upstream
 FLAGS = --std=c++17 -O2 -Xptxas -O2
+=======
+FLAGS = --std=c++17 -G -g -O2
+>>>>>>> Stashed changes
 
 SRCS = 00.cu 01.cu 02.cu 03.cu 04.cu 05.cu 06.cu 07.cu
 

@@ -423,3 +423,33 @@ After you finished with the assembly code, run the code and check if the result 
 
 Note, that you should really rarely use inline assembly in your code. It is hard to write, hard to read and modern compilers are really smart. Use inline assembly if you really see that something can be done much better than the compiler does it (and you failed to convince the compiler to do it).
 
+## 08: The Numbers Every GPU Programmer Should Know
+
+Congratulations! You have solved some problems and got some experience with GPU performance and profiling tools.
+
+However, you probably still do not have a good intuition about how fast or slow different operations are on the GPU. This intuition is very important when working optimizing the GPU workloads and this intuition is very hard to get without a solid amount of practice.
+
+Instead of asking you to do 10 more problems, I suggest you to go solo into the wonderful world of performance engineering and to play with different things on your own.
+
+Try to measure the throughput and latency of the global memory and L1/L2 caches? What about the CPU <-> GPU data transfer?
+
+Try to implement your kernel for some task and guess how fast will it run before running it according to your GPU specification. Did you get it wrong? Try again!
+
+Try to play with different memory- and compute-bound workloads. Look at the profiler metrics and try to understand why are they like this.
+
+Try to get some CUDA code for some task in the internet and try to find bottlenecks in it. Can it be further optimized?
+
+While doing such tasks you will see that your expertise and intuition are growing. This task does not have an end and is limited only by your imagination and curiosity. Feel free to get back to it after the course is finished.
+
+## Extra Reading
+
+This lab is just a brief introduction to the GPU performance optimization. Here are some links that you might find useful or interesting if you want to dive deeper into it.
+
+1. [CUDA C++ Best Practices Guide](https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html) - this is an official guide to performance (and not only performance) by NVIDIA.
+2. [Hopper Tuning Guide](https://docs.nvidia.com/cuda/pdf/Hopper_Tuning_Guide.pdf) - this is an official performance guide for a particular NVIDIA H100 GPU, containing chip-specific information.
+3. [Heterogeneous Computing Course by SAFARI lab](https://safari.ethz.ch/projects_and_seminars/spring2023/doku.php?id=heterogeneous_systems) - this is a nice course about programming GPUs by [SAFARI](https://safari.ethz.ch/) lab at ETH Zurich.
+4. [Blog by Lei Mao](https://leimao.github.io/article/CUDA-Matrix-Multiplication-Optimization/) and [blog by Simon Boehm](https://siboehm.com/articles/22/CUDA-MMM) about the optimization of the matrix-product kernels. Besides this, Lei's and Simon's blogs have a lot of other interesting articles about CUDA and GPU programming, check them out!
+5. [FlashAttention](https://arxiv.org/abs/2205.14135), [FlashAttention-2](https://arxiv.org/abs/2307.08691) and [FlashAttention-3](https://arxiv.org/abs/2407.08608) papers. These papers are about the optimization of the attention mechanism in the transformers, which are the components of many modern deep learning models including LLMs. These papers are quite advanced but they are a good example of real-world GPU optimizations.
+6. [PagedAttention](https://arxiv.org/abs/2309.06180) paper. This is also about attention mechanism but about the memory management of the so called KV-cache.
+
+Feel free to suggest more good readings via the pull request!

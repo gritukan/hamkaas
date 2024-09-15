@@ -1,6 +1,6 @@
 Hi, and welcome to the course!
 
-In this lab you will learn how to program CUDA, a parallel computing platform and programming model developed by NVIDIA for GPUs. CUDA is a low-level programming model that is used in a modern machine learning workloads including LLMs, so it is important to understand how it works.
+In this lab you will learn how to program CUDA, a parallel computing platform and programming model developed by NVIDIA for GPUs. It is used to execute code on the GPU and is used in different machine learning frameworks like PyTorch and JAX. HamKaas also uses CUDA for computations, so it is important to 
 
 We will go through the basic concepts of CUDA and will write some programs to get you started.
 
