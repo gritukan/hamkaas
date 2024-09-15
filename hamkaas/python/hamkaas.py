@@ -525,8 +525,8 @@ class HamKaasPlugin:
         # (lab4/01): Your code here.
 
     def __del__(self) -> None:
-        if self.lib:
-            self.lib.HamKaasFinalize(self.handle)
+        # (lab4/01): Your code here.
+        pass
 
     def inverse_elements(self, input: torch.tensor) -> torch.tensor:
         # (lab4/01): Your code here.
