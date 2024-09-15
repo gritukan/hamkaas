@@ -86,13 +86,13 @@ class HamKaasNode(ABC):
             raise ValueError("Unsupported index type")
 
     def replace(self, replacement, start, end):
-        return ReplaceSlice(self, replacement, start, end)
+        return ReplaceSliceNode(self, replacement, start, end)
 
     def reshape(self, shape: List[int]):
         return ReshapeNode(self, shape)
     
     def permute(self, permutation: List[int]):
-        return Permute(self, permutation)
+        return PermuteNode(self, permutation)
 
     def relu(self):
         return ReLUNode(self)
@@ -474,7 +474,7 @@ class HadamardProductNode(HamKaasNode):
         return self.lhs.eval_slow(inputs, buffers, cache) * self.rhs.eval_slow(inputs, buffers, cache)
     
 
-class Permute(HamKaasNode):
+class PermuteNode(HamKaasNode):
     def __init__(self, input: HamKaasNode, permutation: List[int]):
         super().__init__()
 
@@ -498,7 +498,7 @@ class Permute(HamKaasNode):
         return self.input.eval_slow(inputs, buffers, cache).permute(self.permutation)
 
 
-class ReplaceSlice(HamKaasNode):
+class ReplaceSliceNode(HamKaasNode):
     def __init__(self, input: HamKaasNode, replacement: HamKaasNode, start: Union[HamKaasNode, int], end: Union[HamKaasNode, int]):
         super().__init__()
 
@@ -647,10 +647,10 @@ def traverse_node(node: HamKaasNode) -> TraversalResult:
             return register_node(f"ComplexHadamardProductNode(${run(node.lhs)}, ${run(node.rhs)})")
         elif isinstance(node, HadamardProductNode):
             return register_node(f"HadamardProductNode(${run(node.lhs)}, ${run(node.rhs)})")
-        elif isinstance(node, Permute):
-            return register_node(f"Permute(${run(node.input)}, {node.permutation})")
-        elif isinstance(node, ReplaceSlice):
-            return register_node(f"ReplaceSlice(${run(node.input)}, ${run(node.replacement)}, ${run(node.start)}, ${run(node.end)})")
+        elif isinstance(node, PermuteNode):
+            return register_node(f"PermuteNode(${run(node.input)}, {node.permutation})")
+        elif isinstance(node, ReplaceSliceNode):
+            return register_node(f"ReplaceSliceNode(${run(node.input)}, ${run(node.replacement)}, ${run(node.start)}, ${run(node.end)})")
         elif isinstance(node, SlicedSoftmaxNode):
             return register_node(f"SlicedSoftmaxNode(${run(node.input)}, ${run(node.prefix_size)})")
         elif isinstance(node, BufferTensor):

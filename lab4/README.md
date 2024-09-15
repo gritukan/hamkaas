@@ -61,6 +61,96 @@ The `cpp` directory has the following files:
 - `parser.h, parser.cpp` - contains the code that parses the script and converts it into the tree of nodes.
 - `tensor.h, tensor.cpp` - contains the `TTensorMeta` class that represents the tensor type and shape.
 
+## HamKaas Script Specification
+
+Since you will implement different nodes in the backend, you will need a formal specification of the script.
+
+### Tensors
+
+HamKaas operates with the tensor with tensor being a multi-dimensional array. Each tensor is represented by type and shape.
+
+The type can be either a `float32` which is represented by the `float` type in C++ or a `int64` which is represented by the `int64_t` type in C++.
+
+The shape is a list of integers that represent the size of each dimension. For example, the shape `[128, 28, 28]` means that the tensor is a 3D tensor with the size of 128x28x28. HamKaas supports tensors with 1, 2 or 3 dimensions. HamKaas does not support empty tensors, so each dimension should have at least one element.
+
+### Nodes
+
+#### InputTensor
+* Syntax: `InputTensor(name, type, shape)`
+* Description: describes the input tensor with given type and shape. During the evaluation, the input tensor with the given name should be passed to the model.
+* Usage: used to define the input of the model.
+* Inputs: none
+* Output: the tensor with the given type and shape.
+#### ConstantTensor
+* Syntax: `ConstantTensor(name, type, shape)`
+* Description: describes the tensor with given type and shape that is constant during the model execution. During the compilation, the tensor with the given name should be passed to the model.
+* Usage: used to define the model parameters, for example, weights.
+* Inputs: none
+* Output: the tensor with the given type and shape.
+#### BufferTensor
+* Syntax: `BufferTensor(name, type, shape)`
+* Description: describes the tensor with given type and shape that is allocated during the model compilation and is not changed between the model executions.
+* Usage: data that is passed between different model runs, for example, caches.
+* Inputs: none
+* Output: the tensor with the given type and shape.
+#### SumNode
+* Syntax: `SumNode(lhs, rhs)`
+* Description: describes the node that computes the element-wise sum of two tensors. This node supports broadcasting, that is, if the shapes of the tensors are different, the `rhs` tensor is broadcasted to the shape of the `lhs` tensor. You can read more about broadcasting [here](https://numpy.org/doc/stable/user/basics.broadcasting.html).
+* Inputs: two tensors of type `float32` with the same number of dimensions. For each axis, the size of the axis should be the same or the size of the axis in `rhs` should be 1.
+* Output: the tensor with the same type and shape as `lhs`.
+#### HadamardProductNode
+* Syntax: `HadamardProductNode(lhs, rhs)`
+* Description: describes the node that computes the element-wise product of two tensors. This node supports broadcasting, that is, if the shapes of the tensors are different, the `rhs` tensor is broadcasted to the shape of the `lhs` tensor.
+* Inputs: two tensors of type `float32` with the same number of dimensions. For each axis, the size of the axis should be the same or the size of the axis in `rhs` should be 1.
+* Output: the tensor with the same type and shape as `lhs`.
+#### ReLUNode
+* Syntax: `ReLUNode(input)`
+* Description: describes the node that computes the element-wise ReLU of the input tensor. The ReLU function is defined as `ReLU(x) = max(0, x)`.
+* Inputs: the tensor of type `float32`.
+* Output: the tensor with the same type and shape as `input`.
+#### SiLUNode
+* Syntax: `SiLUNode(input)`
+* Description: describes the node that computes the element-wise SiLU of the input tensor. The SiLU function is defined as `SiLU(x) = x / (1 + exp(-x))`.
+* Inputs: the tensor of type `float32`.
+* Output: the tensor with the same type and shape as `input`.
+#### MatMulNode
+* Syntax: `MatMulNode(lhs, rhs)`
+* Description: performs the matrix multiplication. Works in three modes:
+    - If both `lhs` and `rhs` are 2D tensors, then the node computes the matrix multiplication of the two tensors.
+    - If `lhs` is a 1D tensor and `rhs` is a 2D tensor, then the node computes the
+    vector-matrix multiplication.
+    - If `lhs` is a 3D tensor and `rhs` is a 3D tensor, then the node computes the
+    batched matrix multiplication, that is, interprets `lhs` and `rhs` as the array of matrices and computes the matrix multiplication for each pair of matrices.
+* Inputs: two tensors of type `float32`. The following shapes are allowed:
+    - For matrix multiplication `[m, n]` and `[n, k]`.
+    - For vector-matrix multiplication `[n]` and `[n, k]`.
+    - For batched matrix multiplication `[b, m, n]` and `[b, n, k]`.
+* Output: the tensor of type `float32`. The shape of the output tensor is determined by the shapes of the input tensors.
+    - For matrix multiplication `[m, k]`.
+    - For vector-matrix multiplication `[k]`.
+    - For batched matrix multiplication `[b, m, k]`.
+#### SliceNode
+* Syntax: `SliceNode(input, begin, end)`
+* Description: returns a slice of the input tensor over the first axis. The slice is defined by the constant `begin` and `end` parameters.
+* Inputs: the tensor of type `float32` of type `float32` and shape `[n, ...]` and two integers `begin` and `end` such that `0 <= begin <= end <= n`.
+* Output: the tensor of type `float32` and shape `[end - begin, ...]` built from the tensor elements `input[begin], input[begin + 1], ..., input[end - 1]`.
+#### ReshapeNode
+* Syntax: `ReshapeNode(input, shape)`
+* Description: changes the shape of the input tensor. The number of elements in the input tensor should be the same as the number of elements in the output tensor. Semantics is the similar to [numpy.reshape](https://numpy.org/doc/stable/reference/generated/numpy.reshape.html) function.
+* Inputs: the tensor of type `float32` and the list of integers `shape` that represents the new shape of the output tensor.
+* Output: the tensor of type `float32` and the shape `shape`.
+#### PermuteNode
+* Syntax: `PermuteNode(input, permutation)`
+* Description: changes the order of the dimensions of the input tensor. The number of elements in the input tensor should be the same as the number of elements in the output tensor. Semantics is the similar to [numpy.transpose](https://numpy.org/doc/stable/reference/generated/numpy.transpose.html) function.
+* Inputs: the tensor of type `float32` with $d$ axis and and the permutation of the $d$ integers that represents the new order of the dimensions.
+* Output: the tensor of type `float32` with the same shape as the input tensor but with the dimensions permuted.
+#### ReplaceSliceNode
+* Syntax: `ReplaceSliceNode(input, replacement, begin, end)`
+* Description: replaces the slice of the input tensor over the first axis with the replacement tensor. The slice is defined by the constant `begin` and `end` parameters. Note that this operation does not create a new tensor but changes the input tensor in-place.
+* Usage: the intended usage is to update buffer tensors.
+* Inputs: the tensor of type `float32` of type `float32` and shape `[n, ...]`, the tensor of type `float32` and shape `[k, ...]` with matching shapes except the first axis, and two 1D tensors of type `int64` `begin` and `end` having the size 1.
+* Output: the tensor of type `float32` and shape `[n, ...]` where the elements `input[begin], input[begin + 1], ..., input[end - 1]` are replaced with the elements of the `replacement` tensor. If `end - begin != k` is observed during runtime, the behavior is undefined.
+
 ## 01: Dynamic Linkage
 
 Let's start working on the compiler. Right now, the frontend is not able to communicate with the backend because shared library loader is not implemented. Let's fix that!

@@ -231,13 +231,13 @@ TNodeBasePtr ParseScript(const std::string& script)
             auto rhs = parseNodeRef();
 
             node = std::make_shared<THadamardProductNode>(std::move(lhs), std::move(rhs));
-        } else if (nodeType == "Permute") {
+        } else if (nodeType == "PermuteNode") {
             auto input = parseNodeRef();
             skip(',');
             auto permutation = parseIntList();
 
             node = std::make_shared<TPermuteNode>(std::move(input), std::move(permutation));
-        } else if (nodeType == "ReplaceSlice") {
+        } else if (nodeType == "ReplaceSliceNode") {
             auto input = parseNodeRef();
             skip(',');
             auto replacement = parseNodeRef();
