@@ -340,7 +340,7 @@ Open the file `05.cu`. Look at the `DoSlow` function and try to understand what 
 This is a (little bit weird) way to find the sum of the elements of the array using CUDA. For N which is a power of two it puts input elements on the positions from N to 2N - 1 (inclusive) and then tracts the array as a full binary tree of depth log(N). The root of this tree is a element 1, the leaves are the elements of the input array on positions from N to 2N - 1 and the internal node i has two children: 2i and 2i + 1.
 
 Algorithm puts the sum of the leaves in the subtree to every node. So, the root will contain the sum of all the elements of the array. To do so, it goes from the deep levels of the tree to the root and sets the value of the parent node to the sum of the values of its children. You can see how is it done in `DoSlow` function.
-</detils>
+</details>
 
 Do you see how this can be optimized?
 
