@@ -101,11 +101,16 @@ void TModel::Evaluate(
         }
 
         auto* buffer = inputNode->GetOutput();
-        Device_->CopyToDevice(buffer, it->second, inputNode->GetOutputSize());
+        if (UseGpu_) {
+            CUDA_CHECK_ERROR(cudaMemcpyAsync(buffer, it->second, inputNode->GetOutputSize(), cudaMemcpyHostToDevice, Stream_));
+        } else {
+            std::memcpy(buffer, it->second, inputNode->GetOutputSize());
+        }
+        //Device_->CopyToDevice(buffer, it->second, inputNode->GetOutputSize());
     }
 
     if (UseGpu_) {
-        CUDA_CHECK_ERROR(cudaGraphLaunch(GraphExec_, 0));
+        CUDA_CHECK_ERROR(cudaGraphLaunch(GraphExec_, Stream_));
         /*
         for (auto* node : EvaluationOrder_) {
             node->EvaluateGpu(TEvaluationContext{

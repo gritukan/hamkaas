@@ -708,6 +708,11 @@ class HamKaasPlugin:
         self.lib.HamKaasFinalize.restype = None
 
         self.lib.HamKaasInverseElements.restype = ctypes.POINTER(ctypes.c_ubyte)
+        self.lib.HamKaasInverseElements.argtypes = [
+            ctypes.POINTER(ctypes.c_float), # input
+            ctypes.POINTER(ctypes.c_float), # output
+            ctypes.c_int, # size
+        ]
 
         self.lib.HamKaasCompileModel.argtypes = [
             ctypes.c_void_p, # handle

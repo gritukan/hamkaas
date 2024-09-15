@@ -15,3 +15,9 @@ debug-cudnn: $(SRCS)
 
 release-cudnn: $(SRCS)
 	nvcc $(FLAGS) $(CUDNN_FLAGS) -Xptxas -O3,-v $(SRCS)
+
+allocator-ut: allocator.cpp allocator_ut.cpp
+	nvcc -o allocator-ut allocator.cpp allocator_ut.cpp
+
+test-allocator: allocator-ut
+	./allocator-ut
