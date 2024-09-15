@@ -177,7 +177,7 @@ TNodeBasePtr ParseScript(const std::string& script)
             auto shape = parseIntList();
 
             node = std::make_shared<TConstantNode>(TTensorMeta{type, std::move(shape)}, name);
-        } else if (nodeType == "BufferNode") {
+        } else if (nodeType == "BufferTensor") {
             auto type = parseValueTypeArg();
             skip(',');
             auto shape = parseIntList();

@@ -28,7 +28,6 @@ std::vector<double> AddVectorsGpu(std::vector<double> a, std::vector<double> b)
     constexpr int ThreadsPerBlock = 8;
     int blocksPerGrid = (a.size() + ThreadsPerBlock - 1) / ThreadsPerBlock;
     AddVectors<<<blocksPerGrid, ThreadsPerBlock>>>(a.size(), gpuA, gpuB, gpuC);
-    CUDA_CHECK_KERNEL();
 
     std::vector<double> c(a.size());
     CUDA_CHECK_ERROR(cudaMemcpy(c.data(), gpuC, a.size() * sizeof(double), cudaMemcpyDeviceToHost));

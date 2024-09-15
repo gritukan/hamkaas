@@ -17,7 +17,7 @@ __global__ void SumTensorsBroadcastKernel(
     const T* rhs,
     T* output,
     int64_t* lhsShape,
-    int64_t* rhsShapeMultiplier,
+    int64_t* rhsShape,
     int64_t dimensions,
     int64_t outputSize)
 {
@@ -34,7 +34,8 @@ __global__ void SumTensorsBroadcastKernel(
 
         int64_t rhsIndex = 0;
         for (int64_t i = 0; i < dimensions; ++i) {
-            rhsIndex = rhsIndex * lhsShape[i] + indices[i] * rhsShapeMultiplier[i];
+            int64_t index = rhsShape[i] == 1 ? 0 : indices[i];
+            rhsIndex = rhsIndex * rhsShape[i] + index;
         }
 
         output[lhsIndex] = lhs[lhsIndex] + rhs[rhsIndex];
@@ -47,7 +48,7 @@ void SumTensorsBroadcast(
     const T* rhs,
     T* output,
     int64_t* lhsShape,
-    int64_t* rhsShapeMultiplier,
+    int64_t* rhsShape,
     int64_t dimensions,
     int64_t outputSize)
 {
@@ -60,7 +61,7 @@ void SumTensorsBroadcast(
         rhs,
         output,
         lhsShape,
-        rhsShapeMultiplier,
+        rhsShape,
         dimensions,
         outputSize);
 }
@@ -71,7 +72,7 @@ void SumTensorsBroadcast(
         const T* rhs, \
         T* output, \
         int64_t* lhsShape, \
-        int64_t* rhsShapeMultiplier, \
+        int64_t* rhsShape, \
         int64_t dimensions, \
         int64_t outputSize);
 FOR_ALL_TYPES(INSTANTIATE)

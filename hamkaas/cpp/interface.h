@@ -20,6 +20,7 @@ struct TNamedTensor
 struct TCompilationOptions
 {
     bool UseGpu;
+    bool UseCudnn;
 };
 
 struct TCompilationResult

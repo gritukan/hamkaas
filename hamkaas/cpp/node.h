@@ -143,7 +143,7 @@ private:
     bool Initialized_ = false;
 
     int64_t* LhsShape_;
-    int64_t* RhsShapeMultiplier_;
+    int64_t* RhsShape_;
 
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
 

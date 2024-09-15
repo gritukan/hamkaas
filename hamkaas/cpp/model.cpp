@@ -35,6 +35,10 @@ void TModel::Compile(
     const TCompilationOptions& options,
     const std::unordered_map<std::string, const char*>& constants)
 {
+    if (options.UseCudnn) {
+        THROW("CUDNN is not supported");
+    }
+
     UseGpu_ = options.UseGpu;
     if (UseGpu_) {
         Device_ = CreateCudaDevice();
@@ -162,7 +166,7 @@ void TModel::AllocateMemory()
     }
 
     MemoryPool_ = Device_->DeviceMalloc(2 * allocator.GetWorkingSetSize());
-    std::cerr << "Allocated memory start = " << reinterpret_cast<int64_t>(MemoryPool_) << " end = " << reinterpret_cast<int64_t>(MemoryPool_ + 2 * allocator.GetWorkingSetSize()) << std::endl;
+
     for (auto* node : InputNodes_) {
         node->SetOutput(MemoryPool_ + outputMemory[node]);
     }

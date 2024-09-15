@@ -196,7 +196,7 @@ int64_t TSumNode::GetBufferSize() const
 void TSumNode::SetBuffer(char* buffer)
 {
     LhsShape_ = reinterpret_cast<int64_t*>(buffer);
-    RhsShapeMultiplier_ = LhsShape_ + GetDimensions();
+    RhsShape_ = LhsShape_ + GetDimensions();
 }
 
 void TSumNode::EvaluateCpu()
@@ -226,21 +226,11 @@ void TSumNode::EvaluateGpu(const TEvaluationContext& context)
 {
     //if (!Initialized_) {
         auto lhsShape = Lhs_->GetShape();
-
-        std::vector<int64_t> rhsShapeMultiplier(Rhs_->GetDimensions());
-        for (int index = 0; index < GetDimensions(); ++index) {
-            auto rhsSize = Rhs_->GetShape()[index];
-            if (lhsShape[index] == rhsSize) {
-                rhsShapeMultiplier[index] = 1;
-            } else {
-                assert(rhsSize == 1);
-                rhsShapeMultiplier[index] = 0;
-            }
-        }
+        auto rhsShape = Rhs_->GetShape();
 
         const auto* device = context.Device;
         device->CopyToDevice(LhsShape_, lhsShape.data(), GetDimensions() * sizeof(int64_t));
-        device->CopyToDevice(RhsShapeMultiplier_, rhsShapeMultiplier.data(), GetDimensions() * sizeof(int64_t));
+        device->CopyToDevice(RhsShape_, rhsShape.data(), GetDimensions() * sizeof(int64_t));
 
         //Initialized_ = true;
     //}
@@ -294,7 +284,7 @@ void TSumNode::DoEvaluateGpu(const TEvaluationContext& context)
         reinterpret_cast<const T*>(Rhs_->GetOutput()),
         reinterpret_cast<T*>(GetOutput()),
         LhsShape_,
-        RhsShapeMultiplier_,
+        RhsShape_,
         GetDimensions(),
         GetElementCount());
 

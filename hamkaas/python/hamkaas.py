@@ -11,25 +11,30 @@ import torch.nn
 
 # For now, we support only these types for hamkaas.
 _SUPPORTED_TENSOR_TYPES = [
-    torch.float16,
     torch.float32,
     torch.float64,
-    torch.int16,
-    torch.int32,
     torch.int64,
 ]
 
-# For now, we support only vectors and matrices.
+_MIN_TENSOR_DIMS = 1
 _MAX_TENSOR_DIMS = 3
 
+
+@dataclass
+class TensorMeta:
+    type: torch.dtype
+    shape: List[int]
+
+    def __init__(self, tensor: torch.Tensor):
+        self.type = tensor.dtype
+        self.shape = list(tensor.shape)
+
+    def __init__(self, type: torch.dtype, shape: List[int]):
+        self.type = type
+        self.shape = shape
+
+
 class HamKaasNode(ABC):
-    def __init__(self):
-        self.debug = False
-        pass
-
-    def set_debug(self):
-        self.debug = True
-
     @abstractmethod
     def get_type(self) -> torch.dtype:
         ...
@@ -43,14 +48,6 @@ class HamKaasNode(ABC):
             return cache[id(self)]
 
         result = self.do_eval_slow(inputs, buffers, cache)
-        if self.debug:
-            tot = 1
-            for i in range(len(result.shape)):
-                tot *= result.shape[i]
-            l = result.reshape([tot])
-            l = [x.item() for x in result]
-
-            print("new ", l[:3], l[len(l)//2:len(l)//2+3], l[-3:])
 
         cache[id(self)] = result
 
@@ -60,6 +57,40 @@ class HamKaasNode(ABC):
     def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
         ...
 
+    def __add__(self, other):
+        if isinstance(other, HamKaasNode):
+            return SumNode(self, other)
+        elif isinstance(other, torch.Tensor):
+            return SumNode(self, ConstantTensor(other))
+        
+    def __matmul__(self, other):
+        if isinstance(other, HamKaasNode):
+            return MulNode(self, other)
+        elif isinstance(other, torch.Tensor):
+            return MulNode(self, ConstantTensor(other))
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            if index.step is not None:
+                raise ValueError("Step is not supported for slicing")
+            return SliceNode(self, index.start, index.stop)
+        elif isinstance(index, int):
+            return SliceNode(self, index, index + 1)
+        else:
+            raise ValueError("Unsupported index type")
+    
+    def reshape(self, shape: List[int]):
+        return ReshapeNode(self, shape)
+
+    def relu(self):
+        return ReLUNode(self)
+    
+    def silu(self):
+        return SiLUNode(self)
+    
+    def rms_norm(self, weights: "HamKaasNode"):
+        return RMSNormNode(self, weights)
+
 
 class InputTensor(HamKaasNode):
     def __init__(self, name: str, type: torch.dtype, shape: List[int]):
@@ -67,8 +98,11 @@ class InputTensor(HamKaasNode):
 
         if type not in _SUPPORTED_TENSOR_TYPES:
             raise ValueError(f"Unsupported tensor type: {type}")
-        if len(shape) > _MAX_TENSOR_DIMS:
+        if len(shape) < _MIN_TENSOR_DIMS or len(shape) > _MAX_TENSOR_DIMS:
             raise ValueError(f"Unsupported tensor dimension: {len(shape)}")
+        for dim in shape:
+            if dim <= 0:
+                raise ValueError(f"Invalid tensor shape: {shape}")
 
         self.name = name
         self.type = type
@@ -87,16 +121,18 @@ class InputTensor(HamKaasNode):
         return self.name
     
 
-class BufferNode(HamKaasNode):
-    def __init__(self, name: str, type: torch.dtype, shape: List[int]):
+class BufferTensor(HamKaasNode):
+    def __init__(self, type: torch.dtype, shape: List[int]):
         super().__init__()
 
         if type not in _SUPPORTED_TENSOR_TYPES:
             raise ValueError(f"Unsupported tensor type: {type}")
-        if len(shape) > _MAX_TENSOR_DIMS:
+        if len(shape) < _MIN_TENSOR_DIMS or len(shape) > _MAX_TENSOR_DIMS:
             raise ValueError(f"Unsupported tensor dimension: {len(shape)}")
+        for dim in shape:
+            if dim <= 0:
+                raise ValueError(f"Invalid tensor shape: {shape}")
 
-        self.name = name
         self.type = type
         self.shape = shape
 
@@ -111,19 +147,21 @@ class BufferNode(HamKaasNode):
 
 
 class ConstantTensor(HamKaasNode):
-    def __init__(self, tensor: torch.Tensor, name: str = None):
+    def __init__(self, tensor: torch.Tensor):
         super().__init__()
 
         if tensor.dtype not in _SUPPORTED_TENSOR_TYPES:
             raise ValueError(f"Unsupported tensor type: {tensor.dtype}")
-        if len(tensor.shape) > _MAX_TENSOR_DIMS:
+        if len(tensor.shape) < _MIN_TENSOR_DIMS or len(tensor.shape) > _MAX_TENSOR_DIMS:
             raise ValueError(f"Unsupported tensor dimension: {len(tensor.shape)}")
+        if tensor.nelement() == 0:
+            raise ValueError("Empty tensors are not supported")
 
         # We need tensors to be contiguous to pass them to C++ code.
         tensor = tensor.contiguous()
 
         self.tensor = tensor
-        self.name = name
+        self.name = None
 
     def get_type(self) -> torch.dtype:
         return self.tensor.dtype
@@ -150,6 +188,11 @@ class SumNode(HamKaasNode):
 
         if lhs.get_type() != rhs.get_type():
             raise ValueError("Mixed-precision operations are not supported")
+        if lhs.get_type() not in [torch.float32, torch.float64]:
+            raise ValueError("Sum is supported for float32 and float64 tensors only")
+
+        if len(lhs.get_shape()) != len(rhs.get_shape()):
+            raise ValueError(f"Shapes do not match for addition: {lhs.get_shape()} vs {rhs.get_shape()}")
 
         # If one of the rhs dimensions is 1 and the other is not, broadcast is done.
         for i in range(len(lhs.get_shape())):
@@ -175,7 +218,9 @@ class MulNode(HamKaasNode):
 
         if lhs.get_type() != rhs.get_type():
             raise ValueError("Mixed-precision operations are not supported")
-        
+        if lhs.get_type() not in [torch.float32, torch.float64]:
+            raise ValueError("Matrix multiplication is supported for float32 and float64 tensors only")
+
         lhs_shape = lhs.get_shape()
         if len(lhs_shape) == 1:
             lhs_shape = [1, lhs_shape[0]]
@@ -213,6 +258,9 @@ class ReLUNode(HamKaasNode):
     def __init__(self, input: HamKaasNode):
         super().__init__()
 
+        if input.get_type() not in [torch.float32, torch.float64]:
+            raise ValueError("Only float32 and float64 tensors are supported for ReLU")
+
         self.input = input
 
     def get_type(self) -> torch.dtype:
@@ -228,6 +276,9 @@ class ReLUNode(HamKaasNode):
 class SiLUNode(HamKaasNode):
     def __init__(self, input: HamKaasNode):
         super().__init__()
+
+        if input.get_type() not in [torch.float32, torch.float64]:
+            raise ValueError("Only float32 and float64 tensors are supported for SiLU")
 
         self.input = input
 
@@ -245,6 +296,9 @@ class SiLUNode(HamKaasNode):
 class SliceNode(HamKaasNode):
     def __init__(self, input: HamKaasNode, start: Optional[int] = None, end: Optional[int] = None):
         super().__init__()
+
+        if input.get_type() not in [torch.float32, torch.float64]:
+            raise ValueError("Only float32 and float64 tensors are supported for slicing")
 
         self.input = input
 
@@ -315,14 +369,19 @@ class ReshapeNode(HamKaasNode):
     def __init__(self, input: HamKaasNode, shape: List[int]):
         super().__init__()
 
+        if input.get_type() not in [torch.float32, torch.float64]:
+            raise ValueError("Only float32 and float64 tensors are supported for reshape")
+
         lhs_elements = 1
         for i in range(len(input.get_shape())):
             lhs_elements *= input.get_shape()[i]
         result_elements = 1
         for i in range(len(shape)):
+            if shape[i] <= 0:
+                raise ValueError(f"Invalid shape: {shape}")
             result_elements *= shape[i]
         if lhs_elements != result_elements:
-            raise ValueError(f"Reshape mismatch: {lhs_elements} vs {result_elements}")
+            raise ValueError(f"Reshape tensor size mismatch: {lhs_elements} vs {result_elements}")
 
         self.input = input
         self.shape = shape
@@ -485,17 +544,21 @@ class SlicedSoftmaxNode(HamKaasNode):
         return x
 
 @dataclass
-class HamkaasScript:
+class TraversalResult:
     script: str
     constants: dict[str, torch.Tensor]
+    inputs: dict[str, TensorMeta]
+    output: TensorMeta
 
     def __init__(self):
         self.script = ""
         self.constants = {}
+        self.inputs = {}
+        self.output = None
 
 
-def create_script(node: HamKaasNode) -> HamkaasScript:
-    result = HamkaasScript()
+def traverse_node(node: HamKaasNode) -> TraversalResult:
+    result = TraversalResult()
 
     node_to_index = {}
 
@@ -513,6 +576,10 @@ def create_script(node: HamKaasNode) -> HamkaasScript:
 
         if isinstance(node, InputTensor):
             node_type = str(node.get_type()).removeprefix("torch.")
+            if node.get_name() in result.inputs:
+                raise ValueError(f"Multiple input tensors with name {node.get_name()} were found")
+            result.inputs[node.get_name()] = TensorMeta(node.get_type(), node.get_shape())
+
             return register_node(f"InputTensor({node.get_name()}, {node_type}, {node.get_shape()})")
         elif isinstance(node, ConstantTensor):
             if node.get_name():
@@ -551,18 +618,20 @@ def create_script(node: HamKaasNode) -> HamkaasScript:
             return register_node(f"ReplaceSlice(${run(node.input)}, ${run(node.replacement)}, ${run(node.start)}, ${run(node.end)})")
         elif isinstance(node, SlicedSoftmaxNode):
             return register_node(f"SlicedSoftmaxNode(${run(node.input)}, ${run(node.prefix_size)})")
-        elif isinstance(node, BufferNode):
+        elif isinstance(node, BufferTensor):
             node_type = str(node.get_type()).removeprefix("torch.")
-            return register_node(f"BufferNode({node_type}, {node.get_shape()})")
+            return register_node(f"BufferTensor({node_type}, {node.get_shape()})")
         else:
             raise ValueError(f"Unsupported node type: {type(node)}")
     output = run(node)
     result.script += f"result = ${output};\n"
 
+    result.output = TensorMeta(node.get_type(), node.get_shape())
+
     return result
 
 
-class HamKaasLibrary:
+class HamKaasPlugin:
     class InitializationResult(ctypes.Structure):
         _fields_ = [
             ("handle", ctypes.c_void_p),
@@ -584,6 +653,7 @@ class HamKaasLibrary:
     class CompilationOptions(ctypes.Structure):
         _fields_ = [
             ("use_gpu", ctypes.c_bool),
+            ("use_cudnn", ctypes.c_bool),
         ]
 
     def __init__(self, hamkaas_path: str) -> None:
@@ -595,21 +665,23 @@ class HamKaasLibrary:
         self.lib.HamKaasFreeErrorMessage.restype = None
 
         self.lib.HamKaasInitialize.argtypes = []
-        self.lib.HamKaasInitialize.restype = HamKaasLibrary.InitializationResult
+        self.lib.HamKaasInitialize.restype = HamKaasPlugin.InitializationResult
 
         self.lib.HamKaasFinalize.argtypes = [
             ctypes.c_void_p, # handle
         ]
         self.lib.HamKaasFinalize.restype = None
 
+        self.lib.HamKaasInverseElements.restype = ctypes.POINTER(ctypes.c_ubyte)
+
         self.lib.HamKaasCompileModel.argtypes = [
             ctypes.c_void_p, # handle
-            HamKaasLibrary.CompilationOptions, # options
+            HamKaasPlugin.CompilationOptions, # options
             ctypes.c_char_p, # scriptString
-            ctypes.POINTER(HamKaasLibrary.NamedTensor), # constantTensors
+            ctypes.POINTER(HamKaasPlugin.NamedTensor), # constantTensors
             ctypes.c_int, # constantTensorCount
         ]
-        self.lib.HamKaasCompileModel.restype = HamKaasLibrary.CompilationResult
+        self.lib.HamKaasCompileModel.restype = HamKaasPlugin.CompilationResult
 
         self.lib.HamKaasFreeModel.argtypes = [
             ctypes.c_void_p, # handle
@@ -620,7 +692,7 @@ class HamKaasLibrary:
         self.lib.HamKaasEvaluateModel.argtypes = [
             ctypes.c_void_p, # handle
             ctypes.c_void_p, # model
-            ctypes.POINTER(HamKaasLibrary.NamedTensor), # inputTensors
+            ctypes.POINTER(HamKaasPlugin.NamedTensor), # inputTensors
             ctypes.c_int, # inputTensorCount
             ctypes.c_void_p, # outputTensor
         ]
@@ -637,82 +709,94 @@ class HamKaasLibrary:
         if self.lib:
             self.lib.HamKaasFinalize(self.handle)
 
+    def inverse_elements(self, input: torch.tensor) -> torch.tensor:
+        if input.dtype != torch.float32:
+            raise ValueError("Only float32 tensors are supported for inverse_elements")
+        
+        output = torch.zeros_like(input)
+        input_ptr = ctypes.cast(input.data_ptr(), ctypes.POINTER(ctypes.c_float))
+        output_ptr = ctypes.cast(output.data_ptr(), ctypes.POINTER(ctypes.c_float))
 
-_HAM_KAAS_LIBRARY = None
+        result_ptr = self.lib.HamKaasInverseElements(input_ptr, output_ptr, torch.numel(input))
+        if result_ptr:
+            error = ctypes.string_at(result_ptr).decode()
+            self.lib.HamKaasFreeErrorMessage(result_ptr)
+            raise RuntimeError(error)
 
-def initialize(ham_kaas_path: str) -> None:
-    global _HAM_KAAS_LIBRARY
-    _HAM_KAAS_LIBRARY = HamKaasLibrary(ham_kaas_path)
-
-class HamKaasModel:
-    def __init__(self, model_ptr: int, output_shape: List[int], output_type: torch.dtype) -> None:
-        if _HAM_KAAS_LIBRARY is None:
-            raise ValueError("Hamkaas library is not initialized")
-
-        self._model_ptr = model_ptr
-        self._output_shape = output_shape
-        self._output_type = output_type
-
-    def __del__(self) -> None:
-        assert _HAM_KAAS_LIBRARY
-        _HAM_KAAS_LIBRARY.lib.HamKaasFreeModel(_HAM_KAAS_LIBRARY.handle, self._model_ptr)
-
-    def evaluate(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
-        if _HAM_KAAS_LIBRARY is None:
-            raise ValueError("Hamkaas library is not initialized")
-
+        return output
+    
+    def compile_model(self, node: HamKaasNode, use_gpu=False, use_cudnn=False) -> "HamKaasModel":
+        traveral_result = traverse_node(node)
         named_tensors = [
-            HamKaasLibrary.NamedTensor(
+            HamKaasPlugin.NamedTensor(
                 name.encode("utf-8"),
                 tensor.data_ptr(),
             )
-            for name, tensor in inputs.items()
+            for name, tensor in traveral_result.constants.items()
         ]
 
-        output_tensor = torch.zeros(self._output_shape, dtype=self._output_type)
+        options = HamKaasPlugin.CompilationOptions(use_gpu=use_gpu, use_cudnn=use_cudnn)
+
+        compilation_result = self.lib.HamKaasCompileModel(
+            self.handle,
+            options,
+            traveral_result.script.encode("utf-8"),
+            (HamKaasPlugin.NamedTensor * len(named_tensors))(*named_tensors),
+            len(named_tensors),
+        )
+
+        if compilation_result.error:
+            error = ctypes.string_at(compilation_result.error).decode()
+            self.lib.HamKaasFreeErrorMessage(compilation_result.error)
+            raise RuntimeError(error)
+
+        return HamKaasModel(self, compilation_result.model, traveral_result.inputs, traveral_result.output)
+
+
+class HamKaasModel:
+    def __init__(self, plugin: HamKaasPlugin, model_ptr: int, inputs: Dict[str, TensorMeta], output: TensorMeta) -> None:
+        self._plugin = plugin
+        self._model_ptr = model_ptr
+        self._inputs = inputs
+        self._output = output
+
+    def __del__(self) -> None:
+        self._plugin.lib.HamKaasFreeModel(self._plugin.handle, self._model_ptr)
+
+    def evaluate(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        named_tensors = []
+
+        for name, tensor in inputs.items():
+            if name not in self._inputs:
+                raise ValueError(f"Unknown input tensor: {name}")
+            if self._inputs[name].type != tensor.dtype:
+                raise ValueError(f"Input tensor {name} has wrong type: {tensor.dtype} vs {self._inputs[name].type}")
+            if self._inputs[name].shape != list(tensor.shape):
+                raise ValueError(f"Input tensor {name} has wrong shape: {tensor.shape} vs {self._inputs[name].shape}")
+
+            named_tensors.append(HamKaasPlugin.NamedTensor(
+                name.encode("utf-8"),
+                tensor.data_ptr(),
+            ))
+
+        for name in self._inputs:
+            if name not in inputs:
+                raise ValueError(f"Missing input tensor: {name}")
+
+        output_tensor = torch.zeros(self._output.shape, dtype=self._output.type)
         output_tensor_ptr = ctypes.cast(output_tensor.data_ptr(), ctypes.c_void_p)
 
-        error_ptr = _HAM_KAAS_LIBRARY.lib.HamKaasEvaluateModel(
-            _HAM_KAAS_LIBRARY.handle,
+        error_ptr = self._plugin.lib.HamKaasEvaluateModel(
+            self._plugin.handle,
             self._model_ptr,
-            (HamKaasLibrary.NamedTensor * len(named_tensors))(*named_tensors),
+            (HamKaasPlugin.NamedTensor * len(named_tensors))(*named_tensors),
             len(named_tensors),
             output_tensor_ptr,
         )
 
         if error_ptr:
             error = ctypes.string_at(error_ptr).decode()
-            _HAM_KAAS_LIBRARY.lib.HamKaasFreeErrorMessage(error_ptr)
+            self._plugin.lib.HamKaasFreeErrorMessage(error_ptr)
             raise RuntimeError(error)
 
         return output_tensor
-
-def compile_model(node: HamKaasNode, use_gpu=False) -> None:
-    if _HAM_KAAS_LIBRARY is None:
-        raise ValueError("Hamkaas library is not initialized")
-
-    script = create_script(node)
-    named_tensors = [
-        HamKaasLibrary.NamedTensor(
-            name.encode("utf-8"),
-            tensor.data_ptr(),
-        )
-        for name, tensor in script.constants.items()
-    ]
-
-    options = HamKaasLibrary.CompilationOptions(use_gpu=use_gpu)
-
-    compilation_result = _HAM_KAAS_LIBRARY.lib.HamKaasCompileModel(
-        _HAM_KAAS_LIBRARY.handle,
-        options,
-        script.script.encode("utf-8"),
-        (HamKaasLibrary.NamedTensor * len(named_tensors))(*named_tensors),
-        len(named_tensors),
-    )
-
-    if compilation_result.error:
-        error = ctypes.string_at(compilation_result.error).decode()
-        _HAM_KAAS_LIBRARY.lib.HamKaasFreeErrorMessage(compilation_result.error)
-        raise RuntimeError(error)
-
-    return HamKaasModel(compilation_result.model, node.get_shape(), node.get_type())

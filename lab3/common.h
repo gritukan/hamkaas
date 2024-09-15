@@ -76,17 +76,14 @@ protected:
         exit(1); \
     }
 
-#define CUDA_CHECK_KERNEL() \
-    CUDA_CHECK_ERROR(cudaPeekAtLastError());
-
 template <class TFloatType, size_t N>
-class TGPUVector
+class TGpuVector
     : public TNonCopyable
 {
 public:
-    TGPUVector() = default;
+    TGpuVector() = default;
 
-    ~TGPUVector()
+    ~TGpuVector()
     {
         MaybeFree();
     }
@@ -137,13 +134,13 @@ private:
 
 // Stores elements in row-major order.
 template <class TFloatType, size_t N, size_t M>
-class TGPUMatrix
+class TGpuMatrix
     : public TNonCopyable
 {
 public:
-    TGPUMatrix() = default;
+    TGpuMatrix() = default;
 
-    ~TGPUMatrix()
+    ~TGpuMatrix()
     {
         MaybeFree();
     }
