@@ -121,7 +121,7 @@ When you are done, test your solution with `make 05-test`. If you see `All tests
 
 In this task, you will implement a max pooling operation kernel. The code for this task is located in `06.cu` file.
 
-Max pooling is a common operation in convolutional neural networks. You can learn about it [here](https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html). In this problem you will implement a kernel of size $4 \times 4$ and stride 1. Formally, for an input matrix $n \times m$ you need to compute an output matrix of the same size satisfying $\text{out}_{i, j} = \max_{i}^{min(n - 1, i + 3)} \max_{j}^{min(m - 1, j + 3)} \text{in}_{i, j}$. Refer to $MaxPoolingCpu$ for a simple implementation.
+Max pooling is a common operation in convolutional neural networks. You can learn about it [here](https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html). In this problem you will implement a kernel of size $4 \times 4$ and stride 1. Formally, for an input matrix $n \times m$ you need to compute an output matrix of the same size satisfying $out_{i, j}$ be equal to the maximum of the submatrix with corners $(i, j)$ and $(\text{min}(i + 3, n - 1), \text{max}(j + 3, n - 1))$. Refer to `MaxPoolingCpu` for a simple implementation.
 
 Hints:
 * You may assume that all matrix elements are non-negative, so you can use zero as a negative infinity.
