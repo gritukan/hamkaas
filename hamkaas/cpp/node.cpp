@@ -443,23 +443,7 @@ void TMulNode::EvaluateGpu(const TEvaluationContext& context)
 
 void TMulNode::Initialize(IDevice* device)
 {
-    int64_t b, n, m, k;
-    if (Lhs_->GetDimensions() == 1) {
-        b = 1;
-        n = 1;
-        m = Rhs_->GetShape()[1];
-        k = Lhs_->GetShape()[0];
-    } else if (Lhs_->GetDimensions() == 2) {
-        b = 1;
-        n = Lhs_->GetShape()[0];
-        m = Rhs_->GetShape()[1];
-        k = Lhs_->GetShape()[1];
-    } else {
-        b = Lhs_->GetShape()[0];
-        n = Lhs_->GetShape()[1];
-        m = Rhs_->GetShape()[2];
-        k = Lhs_->GetShape()[2];
-    }
+    auto [b, n, m, k] = GetParameters();
 
     std::vector<void*> lhsMatrices(b);
     std::vector<void*> rhsMatrices(b);
@@ -483,23 +467,7 @@ void TMulNode::DoEvaluateCpu()
     auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
-    int64_t b, n, m, k;
-    if (Lhs_->GetDimensions() == 1) {
-        b = 1;
-        n = 1;
-        m = Rhs_->GetShape()[1];
-        k = Lhs_->GetShape()[0];
-    } else if (Lhs_->GetDimensions() == 2) {
-        b = 1;
-        n = Lhs_->GetShape()[0];
-        m = Rhs_->GetShape()[1];
-        k = Lhs_->GetShape()[1];
-    } else {
-        b = Lhs_->GetShape()[0];
-        n = Lhs_->GetShape()[1];
-        m = Rhs_->GetShape()[2];
-        k = Lhs_->GetShape()[2];
-    }
+    auto [b, n, m, k] = GetParameters();
 
     for (int64_t matrixIndex = 0; matrixIndex < b; ++matrixIndex) {
         for (int64_t x = 0; x < n; x++) {
@@ -517,23 +485,7 @@ void TMulNode::DoEvaluateCpu()
 template <class T>
 void TMulNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
-    int64_t b, n, m, k;
-    if (Lhs_->GetDimensions() == 1) {
-        b = 1;
-        n = 1;
-        m = Rhs_->GetShape()[1];
-        k = Lhs_->GetShape()[0];
-    } else if (Lhs_->GetDimensions() == 2) {
-        b = 1;
-        n = Lhs_->GetShape()[0];
-        m = Rhs_->GetShape()[1];
-        k = Lhs_->GetShape()[1];
-    } else {
-        b = Lhs_->GetShape()[0];
-        n = Lhs_->GetShape()[1];
-        m = Rhs_->GetShape()[2];
-        k = Lhs_->GetShape()[2];
-    }
+    auto [b, n, m, k] = GetParameters();
 
     T One = 1;
     T Zero = 0;
@@ -612,6 +564,32 @@ void TMulNode::DoEvaluateGpu(const TEvaluationContext& context)
     }
 
     CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+}
+
+TMulNode::TParameters TMulNode::GetParameters() const
+{
+    if (Lhs_->GetDimensions() == 1) {
+        return TParameters{
+            .B = 1,
+            .N = 1,
+            .M = Rhs_->GetShape()[1],
+            .K = Lhs_->GetShape()[0],
+        };
+    } else if (Lhs_->GetDimensions() == 2) {
+        return TParameters{
+            .B = 1,
+            .N = Lhs_->GetShape()[0],
+            .M = Rhs_->GetShape()[1],
+            .K = Lhs_->GetShape()[1],
+        };
+    } else {
+        return TParameters{
+            .B = Lhs_->GetShape()[0],
+            .N = Lhs_->GetShape()[1],
+            .M = Rhs_->GetShape()[2],
+            .K = Lhs_->GetShape()[2],
+        };
+    }
 }
 
 TReLUNode::TReLUNode(TNodeBasePtr input)
@@ -763,7 +741,12 @@ TSliceNode::TSliceNode(TNodeBasePtr input, int64_t begin, int64_t end)
     , Input_(std::move(input))
     , Begin_(begin)
     , End_(end)
-{ }
+{
+    Stride_ = 1;
+    for (int64_t index = 1; index < GetDimensions(); ++index) {
+        Stride_ *= GetShape()[index];
+    }
+}
 
 const TNodeBasePtr& TSliceNode::GetInput() const
 {
@@ -792,23 +775,12 @@ TNodeBase* TSliceNode::GetOutputOwner() const
 
 void TSliceNode::EvaluateCpu()
 {
-    int64_t stride = 1;
-    for (int64_t index = 1; index < GetDimensions(); ++index) {
-        stride *= GetShape()[index];
-    }
-
-    Output_ = Input_->GetOutput() + Begin_ * stride * GetElementSize();
+    Output_ = Input_->GetOutput() + Begin_ * Stride_ * GetElementSize();
 }
 
 void TSliceNode::EvaluateGpu(const TEvaluationContext& /*context*/)
 {
-    // TODO: Refactor to avoid copypaste.
-    int64_t stride = 1;
-    for (int64_t index = 1; index < GetDimensions(); ++index) {
-        stride *= GetShape()[index];
-    }
-
-    Output_ = Input_->GetOutput() + Begin_ * stride * GetElementSize();
+    Output_ = Input_->GetOutput() + Begin_ * Stride_ * GetElementSize();
 }
 
 int64_t TSliceNode::GetOutputSize() const
@@ -1166,24 +1138,8 @@ void THadamardProductNode::DoEvaluateCpu()
     auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
-    for (int64_t lhsIndex = 0; lhsIndex < Lhs_->GetElementCount(); ++lhsIndex) {
-        std::vector<int64_t> rhsIndices(Rhs_->GetDimensions());
-        int64_t lhsIndexCopy = lhsIndex;
-        for (int64_t index = Rhs_->GetDimensions() - 1; index >= 0; --index) {
-            rhsIndices[index] = lhsIndexCopy % Lhs_->GetShape()[index];
-            lhsIndexCopy /= Lhs_->GetShape()[index];
-            if (rhsIndices[index] >= Rhs_->GetShape()[index]) {
-                assert(Rhs_->GetShape()[index] == 1);
-                rhsIndices[index] = 0;
-            }
-        }
-
-        int64_t rhsIndex = 0;
-        for (int64_t index = 0; index < Rhs_->GetDimensions(); ++index) {
-            rhsIndex = rhsIndex * Rhs_->GetShape()[index] + rhsIndices[index];
-        }
-
-        output[lhsIndex] = lhs[lhsIndex] * rhs[rhsIndex];
+    for (int64_t index = 0; index < Lhs_->GetElementCount(); ++index) {
+        output[index] = lhs[index] * rhs[index];
     }
 }
 
@@ -1395,19 +1351,14 @@ void TReplaceSliceNode::EvaluateCpu()
     auto end = *reinterpret_cast<const int64_t*>(End_->GetOutput());
     auto* output = Input_->GetOutput();
 
-    int64_t stride = 1;
-    for (int64_t index = 1; index < GetDimensions(); ++index) {
-        stride *= GetShape()[index];
-    }
-
     assert(end - begin == Replacement_->GetElementCount());
     assert(begin >= 0);
     assert(end <= Input_->GetElementCount());
 
     memcpy(
-        output + begin * stride * GetElementSize(),
+        output + begin * GetElementSize(),
         replacement,
-        (end - begin) * stride * GetElementSize());
+        (end - begin) * GetElementSize());
 
     Output_ = Input_->GetOutput();
 }
@@ -1423,19 +1374,14 @@ void TReplaceSliceNode::EvaluateGpu(const TEvaluationContext& context)
 
     auto* output = Input_->GetOutput();
 
-    int64_t stride = 1;
-    for (int64_t index = 1; index < GetDimensions(); ++index) {
-        stride *= GetShape()[index];
-    }
-
     assert(end - begin == Replacement_->GetElementCount());
     assert(begin >= 0);
     assert(end <= Input_->GetElementCount());
 
     context.Device->DeviceCopy(
-        output + begin * stride * GetElementSize(),
+        output + begin * GetElementSize(),
         replacement,
-        (end - begin) * stride * GetElementSize());
+        (end - begin) * GetElementSize());
     CUDA_CHECK_ERROR(cudaDeviceSynchronize());
 
     Output_ = Input_->GetOutput();

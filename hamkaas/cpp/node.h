@@ -197,6 +197,15 @@ private:
 
     template <class T>
     void DoEvaluateGpu(const TEvaluationContext& context);
+
+    struct TParameters
+    {
+        int64_t B;
+        int64_t N;
+        int64_t M;
+        int64_t K;
+    };
+    TParameters GetParameters() const;
 };
 
 class TReLUNode
@@ -267,6 +276,8 @@ private:
     const TNodeBasePtr Input_;
     const int64_t Begin_;
     const int64_t End_;
+
+    size_t Stride_;
 
     static TTensorMeta CalculateMeta(const TTensorMeta& input, int64_t begin, int64_t end);
 };
