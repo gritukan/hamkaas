@@ -147,50 +147,50 @@ Error message means that warps are not fully utilize the compute. This is becaus
 
 That's it for now! You did your first kernel optimizations using NVIDIA Nsight. Before moving to the next task, I suggest you to play a little bit with Nsight Systems and Nsight compute to get more familiar with them. Try to change kernel in some ways and see how it affects the performance and profiler metrics. Try to change the size of the array to make operation more heavy or try to make the kernel memory-bound by changing the number of iterations in the kernel.
 
+If you want to go even deeper with these tools read the official documentation or watch some tutorials on the NVIDIA YouTube channel with useful features and tricks.
+
 ## 01: Coalescing memory access
 
 In this task, you are provided a kernel that sums up two vectors. The kernel is located in the file `01.cu`.
 
-Take a look at the code. Unlike the program we wrote in a previous lab, the number of elements in the vector is greater than the number of threads in the block. Each thread is responsible for summing up a consecutive range of the vector elements. Compile the program and run the profiling. Look at the "Memory Workload Analysis" section of the details tab. Find the message "The memory access pattern for loads from L1TEX to L2 is not optimal. The granularity of an L1TEX request to L2 is a 128 byte cache line. That is 4 consecutive 32-byte sectors per L2 request. However, this kernel only accesses an average of 1.0 sectors out of the possible 4 sectors per cache line." Our memory access pattern is coalesced in each thread, so it seems to be optimal. Can you spot the problem here?
+Take a look at the code. Unlike the program we wrote in a previous lab, the number of elements in the vector is greater than the number of threads in the block. Each thread is responsible for summing up a consecutive range of the vector elements. Compile the program and run the profiling with `ncu -o 01.prof ./01`. This will be faster than the profiling in the previous task since we disabled most of the metrics. Now, on Details tab, Nsight tells us that there are some latency issues since both compute and memory utilization are low.
+
+Let's rerun the profiling with `--section MemoryWorkloadAnalysis_Chart --section MemoryWorkloadAnalysis_Tables --section SpeedOfLight` to collect more metrics and memory usage pattern. By the way, you can run `ncu --list-section` to see all the possible metric groups.
+
+At first, you can take a look at nice memory workload chat that looks like this.
+
+![](_imgs/5.png)
+
+It shows how much data was transferred between different levels of memory hierarch and at which speed. That may be useful to understand the cache hit of some kernels, for example.
+
+Now, move on to the memory workload analysis tables. You can see multiple warnings about the memory access patterns, read them. What is the problem with the kernel?
+<details>
+<summary> Answer </summary>
+Remember that threads are grouped in warps and warps are executed at the SM in a SIMD manner. Consider a warp of first 32 threads. Let's see which elements are accessed during the first instruction.
+
+Let $k$ be the total number of threads. Then the first thread accesses element $0$ during the first instruction. The second thread accesses element $n / k$, the third accesses $2n / k$, etc. These accesses are not coalesced (despite the fact that the read pattern of the threads is coalesced), so this is the reason of wasted memory bandwidth since during the memory fetch a whole cache line of 128 bytes is read but only 8 bytes are used.
+
+</details>
+
+How to fix the problem?
 
 <details>
 <summary> Answer </summary>
-Remember that threads are grouped in warps and warps are executed at the SM in a SIMD manner. Consider a warp of first 32 threads. Which elements do they access in the vector during the first instruction?
 
-<details>
-<summary> Spoiler </summary>
-They access elements $0, \frac{n}{k}, 2 \cdot \frac{2n}{k}, \ldots, 32 \cdot \frac{n}{k}$
+Ensure that all threads in a warp access consecutive memory locations during a step. Consider a warp of the first 32 threads again. During the first instruction we want them to access elements $0, 1, 2, \ldots, 31$. During the second instruction we want them to access elements $p, p + 1, p + 2, \ldots, p + 31$ for some $p$ and so on. A good choice of $p$ is the number of threads for example (let it be $k$). In this case, thread with number $i$ will process elements with numbers $i, i + k, i + 2k, \ldots$.
+
 </details>
 
-These accesses are not coalesced, so this is the reason of wasted memory bandwidth since data in a cache line that was read is not used.
-</details>
-
-How to fix the problem? Change `AddVectorsKernelOpt` to fix the problem.
+Rewrite `AddVectorsKernelOpt` to make the memory access pattern coalesced. Run the program again. You should see a great decrease in the execution time. Run the profiling again. You should see that memory throughput became 80+% and there are no more issues on the details tab. Note, that compute utilization is less than memory utilization. Why is it so?
 
 <details>
-
 <summary> Answer </summary>
-
-Ensure that all threads in a warp access consecutive memory locations during a step. Consider a warp of the first 32 threads. During the first instruction we want them to access elements $0, 1, 2, \ldots, 31$. During the second instruction we want them to access elements $p, p + 1, p + 2, \ldots, p + 31$ for some $p$ and so on. How to implement that?
-
-<details>
-<summary> Solution </summary>
-int threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
-if (threadIndex >= k) {
-    return;
-}
-
-for (int index = threadIndex; index < n; index += k) {
-    out[index] = inA[index] + inB[index];
-}
-
+This kernel is memory-bound but not compute-bound since the processing in each thread is very simple compared to data fetch from the global memory.
 </details>
 
-</details>
+Also, note that we run every kernel for 3 times. This is not a mistake. The first run can be slow sometimes because of the "cold start" effects. You should always run the kernel for a few times during profiling to make sure that there are no effects of a "cold start" and that the execution time is stable across different runs.
 
-Run the profiling again. You should see a big decrease of the execution duration. Let's look at the issues tab again. The next issue is "This kernel grid is too small to fill the available resources on this device", meaning that the total number of threads is too small to occupy all the GPU. Fix it by increasing `K` in the code. You should see a decrease in the execution time again.
-
-Congratulations! You have optimized the kernel by undertanding the GPU architecture.
+Good job! You have optimized the CUDA kernel by understanding memory hierarchy of the GPU!
 
 ## 02: Matrix transposition
 
