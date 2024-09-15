@@ -231,6 +231,8 @@ def transformer(token: int, pos: int, conf: Config, state: RunState, weights: Tr
                 state.debug = att
 
             # Softmax the scores to get attention weights, from 0..pos inclusively
+            #if l == 0 :
+            #    print('old', att[:10])
             att = softmax(att, pos + 1)
             xb_ptr = h * head_size
             # Weighted sum of the values, store back into xb
@@ -295,7 +297,7 @@ def build_model(conf: Config, weights: TransformerWeights):
     hidden_dim = conf.hidden_dim
     head_size = dim // conf.n_heads
 
-    #inv_sqrt_head_size = hamkaas.ConstantTensor(torch.tensor([[1.0 / math.sqrt(head_size)]], dtype=torch.float32), name="inv_sqrt_head_size")
+    inv_sqrt_head_size_2 = hamkaas.ConstantTensor(torch.tensor([[1.0 / math.sqrt(head_size)]], dtype=torch.float32), name="inv_sqrt_head_size")
     inv_sqrt_head_size = hamkaas.ConstantTensor(torch.tensor([1.0 / math.sqrt(head_size)], dtype=torch.float32), name="inv_sqrt_head_size")
     head_zeroes = hamkaas.ConstantTensor(torch.zeros(head_size, dtype=torch.float32), name="head_zeroes")
 
@@ -429,28 +431,32 @@ def build_model(conf: Config, weights: TransformerWeights):
         cache_end = cache_end_indices[l]
         key_cache = hamkaas.ReplaceNodeVariableSlice(key_cache, k, cache_start, cache_end)
         value_cache = hamkaas.ReplaceNodeVariableSlice(value_cache, v, cache_start, cache_end)
+
+        q_m = hamkaas.ReshapeNode(q, [conf.n_heads, head_size, 1])
+ 
+        k_m = hamkaas.SliceNode(key_cache, loff, loff + conf.seq_len * dim)
+        k_m = hamkaas.ReshapeNode(k_m, [conf.seq_len, conf.n_heads, head_size])
+        # [heads, seq_len, head_size]
+        #k_m = hamkaas.ReshapeNode(k_m, [conf.n_heads, head_size, conf.seq_len])
+        k_m = hamkaas.Tr(k_m)
+
+        scores = hamkaas.MulNode(k_m, q_m) # [conf.n_heads, conf.seq_len, 1]
+        # if l == 0:
+        #    scores.set_debug()
+        assert scores.get_shape() == [conf.n_heads, conf.seq_len, 1]
+        scores = hamkaas.ReshapeNode(scores, [conf.n_heads, conf.seq_len])
+        scores = hamkaas.HadamardProductNode(scores, inv_sqrt_head_size_2)
+
+        scores = hamkaas.ReshapeNode(scores, [conf.n_heads * conf.seq_len])
+
         # Multihead attention. Iterate over all heads
         for h in range(conf.n_heads):
-            # Get the query vector for this head
-            q_head = hamkaas.SliceNode(q, h * head_size, (h + 1) * head_size)
-
-            # Attention scores for this head
-            att = hamkaas.SliceNode(att_cache, h * conf.seq_len, (h + 1) * conf.seq_len)
-
-            # Iterate over all timesteps, including the current one
-            for t in range(conf.seq_len):
-                # Get the key vector for this head and at this timestemp
-                # XXX: What is going on here.
-                k = hamkaas.SliceNode(key_cache, loff + t * dim + h * head_size, loff + t * dim + (h + 1) * head_size)
-
-                # Calculate the attention score as the dot product of q and k
-                score = hamkaas.DotProductNode(q_head, k)
-                score = hamkaas.HadamardProductNode(score, inv_sqrt_head_size)
-
-                # Save the score to the attention buffer
-                att = hamkaas.ReplaceNodeConstantSlice(att, score, t, t + 1)
+            att = hamkaas.SliceNode(scores, h * conf.seq_len, (h + 1) * conf.seq_len)
+            #if l == 0:
+            #    att.set_debug()
 
             att = hamkaas.SlicedSoftmaxNode(att, pos_plus_one)
+
             # Weighted sum of the values, store back into xb
             xb_slice = head_zeroes
 
@@ -494,7 +500,7 @@ def build_model(conf: Config, weights: TransformerWeights):
 
     # Classifier into logits
     logits = hamkaas.MulNode(x, wcls)
-    #logits.set_debug()
+    logits.set_debug()
     return logits
 
 
@@ -676,10 +682,10 @@ def run(args):
             inputs[f"cache_end_{l}"] = torch.tensor([loff + (pos + 1) * dim], dtype=torch.int64)
 
         logits = model.eval_slow(inputs, buffers, {})
-        #transformer(token, pos, config, state, weights)
+        transformer(token, pos, config, state, weights)
 
-        #K = 3
-        #print('old', state.debug[:K], state.debug[len(state.debug) // 2 : len(state.debug) // 2 + K], state.debug[-K:])
+        K = 3
+        print('old', state.debug[:K], state.debug[len(state.debug) // 2 : len(state.debug) // 2 + K], state.debug[-K:])
 
         # Forward the transformer to get logits for the next token
         if pos < len(prompt_tokens):

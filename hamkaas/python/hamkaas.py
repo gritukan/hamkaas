@@ -206,6 +206,13 @@ class MulNode(HamKaasNode):
             return [self.lhs.get_shape()[0], self.lhs.get_shape()[1], self.rhs.get_shape()[2]]
 
     def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
+        lhs = self.lhs.eval_slow(inputs, buffers, cache)
+        rhs = self.rhs.eval_slow(inputs, buffers, cache)
+        # if self.debug:
+        #     print('lhs', lhs[0], lhs[1])
+        #     import sys
+        #     sys.exit(0)
+        #     print('rhs', self.rhs.get_shape())
         return torch.matmul(self.lhs.eval_slow(inputs, buffers, cache), self.rhs.eval_slow(inputs, buffers, cache))
 
 
@@ -389,6 +396,21 @@ class HadamardProductNode(HamKaasNode):
     def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
         return self.lhs.eval_slow(inputs, buffers, cache) * self.rhs.eval_slow(inputs, buffers, cache)
     
+
+class Tr(HamKaasNode):
+    def __init__(self, input: HamKaasNode):
+        super().__init__()
+
+        self.input = input
+
+    def get_type(self) -> torch.dtype:
+        return self.input.get_type()
+    
+    def get_shape(self) -> List[int]:
+        return [self.input.get_shape()[1], self.input.get_shape()[0], self.input.get_shape()[2]]
+    
+    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
+        return self.input.eval_slow(inputs, buffers, cache).transpose(0, 1)
 
 class DotProductNode(HamKaasNode):
     def __init__(self, lhs: HamKaasNode, rhs: HamKaasNode):
