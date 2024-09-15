@@ -14,6 +14,8 @@ struct TEvaluationContext
 {
     const TBootstrap* Bootstrap;
     const IDevice* Device;
+
+    cudaStream_t Stream = nullptr;
 };
 
 class TNodeBase
@@ -226,7 +228,7 @@ private:
     void DoEvaluateCpu();
 
     template <class T>
-    void DoEvaluateGpu();
+    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TSiLUNode
@@ -249,7 +251,7 @@ private:
     void DoEvaluateCpu();
 
     template <typename T>
-    void DoEvaluateGpu();
+    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TSliceNode
@@ -304,7 +306,7 @@ private:
     void DoEvaluateCpu();
 
     template <class T>
-    void DoEvaluateGpu();
+    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TReshapeNode
@@ -355,7 +357,7 @@ private:
     void DoEvaluateCpu();
 
     template <class T>
-    void DoEvaluateGpu();
+    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class THadamardProductNode
@@ -380,7 +382,7 @@ private:
     void DoEvaluateCpu();
 
     template <class T>
-    void DoEvaluateGpu();
+    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TPermuteNode
@@ -413,7 +415,7 @@ private:
     bool Initialized_ = false;
 
     template <class T>
-    void DoEvaluateGpu();
+    void DoEvaluateGpu(const TEvaluationContext& context);
 
     static TTensorMeta CalculateMeta(const TTensorMeta& input, const std::vector<int64_t>& permutation);
 };
@@ -446,7 +448,7 @@ private:
     const TNodeBasePtr End_;
 
     template <class T>
-    void DoEvaluateGpu();
+    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TSlicedSoftmaxNode
@@ -471,7 +473,7 @@ private:
     void DoEvaluateCpu();
 
     template <class T>
-    void DoEvaluateGpu();
+    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 } // namespace NHamKaas

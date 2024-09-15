@@ -35,6 +35,10 @@ private:
 
     char* MemoryPool_ = nullptr;
 
+    cudaStream_t Stream_ = nullptr;
+    cudaGraph_t Graph_ = nullptr;
+    cudaGraphExec_t GraphExec_ = nullptr;
+
     std::vector<TInputNode*> InputNodes_;
     std::vector<TNodeBase*> EvaluationOrder_;
 

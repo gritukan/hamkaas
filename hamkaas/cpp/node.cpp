@@ -280,6 +280,7 @@ template <class T>
 void TSumNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
     SumTensorsBroadcast(
+        context.Stream,
         reinterpret_cast<const T*>(Lhs_->GetOutput()),
         reinterpret_cast<const T*>(Rhs_->GetOutput()),
         reinterpret_cast<T*>(GetOutput()),
@@ -287,8 +288,6 @@ void TSumNode::DoEvaluateGpu(const TEvaluationContext& context)
         RhsShape_,
         GetDimensions(),
         GetElementCount());
-
-    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
 }
 
 TTensorMeta TSumNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
@@ -494,6 +493,8 @@ void TMulNode::DoEvaluateGpu(const TEvaluationContext& context)
         break;
     }
 
+    CUBLAS_CHECK_ERROR(cublasSetStream(context.Bootstrap->GetCublasHandle(), context.Stream));
+
     CUBLAS_CHECK_ERROR(cublasGemmBatchedEx(
         context.Bootstrap->GetCublasHandle(),
         CUBLAS_OP_T,
@@ -515,7 +516,6 @@ void TMulNode::DoEvaluateGpu(const TEvaluationContext& context)
         b,
         type,
         CUBLAS_GEMM_DEFAULT_TENSOR_OP));
-    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
 
     if (type == CUDA_R_32F) {
         for (int index = 0; index < b; ++index) {
@@ -556,8 +556,6 @@ void TMulNode::DoEvaluateGpu(const TEvaluationContext& context)
     } else {
         THROW("Unsupported value type", VAR(GetValueType()));
     }
-
-    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
 }
 
 TMulNode::TParameters TMulNode::GetParameters() const
@@ -624,14 +622,14 @@ void TReLUNode::EvaluateCpu()
     }
 }
 
-void TReLUNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+void TReLUNode::EvaluateGpu(const TEvaluationContext& context)
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        DoEvaluateGpu<float>();
+        DoEvaluateGpu<float>(context);
         return;
     case EValueType::Float64:
-        DoEvaluateGpu<double>();
+        DoEvaluateGpu<double>(context);
         return;
     }
 }
@@ -648,14 +646,12 @@ void TReLUNode::DoEvaluateCpu()
 }
 
 template <class T>
-void TReLUNode::DoEvaluateGpu()
+void TReLUNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
     auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
-    ReLU(input, output, Input_->GetElementCount());
-
-    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+    ReLU(context.Stream, input, output, Input_->GetElementCount());
 }
 
 TSiLUNode::TSiLUNode(TNodeBasePtr input)
@@ -696,14 +692,14 @@ void TSiLUNode::EvaluateCpu()
     }
 }
 
-void TSiLUNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+void TSiLUNode::EvaluateGpu(const TEvaluationContext& context)
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        DoEvaluateGpu<float>();
+        DoEvaluateGpu<float>(context);
         return;
     case EValueType::Float64:
-        DoEvaluateGpu<double>();
+        DoEvaluateGpu<double>(context);
         return;
     }
 }
@@ -720,14 +716,12 @@ void TSiLUNode::DoEvaluateCpu()
 }
 
 template <class T>
-void TSiLUNode::DoEvaluateGpu()
+void TSiLUNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
     auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
-    SiLU(input, output, Input_->GetElementCount());
-
-    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+    SiLU(context.Stream, input, output, Input_->GetElementCount());
 }
 
 TSliceNode::TSliceNode(TNodeBasePtr input, int64_t begin, int64_t end)
@@ -855,14 +849,14 @@ void TRmsNormNode::EvaluateCpu()
     }
 }
 
-void TRmsNormNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+void TRmsNormNode::EvaluateGpu(const TEvaluationContext& context)
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        DoEvaluateGpu<float>();
+        DoEvaluateGpu<float>(context);
         return;
     case EValueType::Float64:
-        DoEvaluateGpu<double>();
+        DoEvaluateGpu<double>(context);
         return;
     default:
         THROW("GPU inference does not support this value type", VAR(GetValueType()));
@@ -890,15 +884,19 @@ void TRmsNormNode::DoEvaluateCpu()
 }
 
 template <class T>
-void TRmsNormNode::DoEvaluateGpu()
+void TRmsNormNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
     auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
     auto* weights = reinterpret_cast<const T*>(Weights_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
-    RMSNorm(input, weights, output, Input_->GetElementCount(), /*epsilon*/ T(1e-5));
-
-    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+    RMSNorm(
+        context.Stream,
+        input,
+        weights,
+        output,
+        Input_->GetElementCount(),
+        /*epsilon*/ T(1e-5));
 }
 
 TReshapeNode::TReshapeNode(TNodeBasePtr input, std::vector<int64_t> shape)
@@ -1022,14 +1020,14 @@ void TComplexHadamardProductNode::EvaluateCpu()
     }
 }
 
-void TComplexHadamardProductNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+void TComplexHadamardProductNode::EvaluateGpu(const TEvaluationContext& context)
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        DoEvaluateGpu<float>();
+        DoEvaluateGpu<float>(context);
         return;
     case EValueType::Float64:
-        DoEvaluateGpu<double>();
+        DoEvaluateGpu<double>(context);
         return;
     }
 }
@@ -1054,15 +1052,13 @@ void TComplexHadamardProductNode::DoEvaluateCpu()
 }
 
 template <typename T>
-void TComplexHadamardProductNode::DoEvaluateGpu()
+void TComplexHadamardProductNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
     auto* lhs = reinterpret_cast<const T*>(Lhs_->GetOutput());
     auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
-    ComplexHadamardProduct(lhs, rhs, output, Lhs_->GetShape()[0]);
-
-    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+    ComplexHadamardProduct(context.Stream, lhs, rhs, output, Lhs_->GetShape()[0]);
 }
 
 THadamardProductNode::THadamardProductNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
@@ -1125,10 +1121,10 @@ void THadamardProductNode::EvaluateGpu(const TEvaluationContext& context)
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        DoEvaluateGpu<float>();
+        DoEvaluateGpu<float>(context);
         return;
     case EValueType::Float64:
-        DoEvaluateGpu<double>();
+        DoEvaluateGpu<double>(context);
         return;
     default:
         THROW("GPU inference does not support this value type", VAR(GetValueType()));
@@ -1148,15 +1144,13 @@ void THadamardProductNode::DoEvaluateCpu()
 }
 
 template <typename T>
-void THadamardProductNode::DoEvaluateGpu()
+void THadamardProductNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
     auto* lhs = reinterpret_cast<const T*>(Lhs_->GetOutput());
     auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
-    HadamardProduct(lhs, rhs, output, GetElementCount());
-
-    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+    HadamardProduct(context.Stream, lhs, rhs, output, GetElementCount());
 }
 
 TPermuteNode::TPermuteNode(TNodeBasePtr input, std::vector<int64_t> permutation)
@@ -1229,21 +1223,22 @@ void TPermuteNode::EvaluateGpu(const TEvaluationContext& context)
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        DoEvaluateGpu<float>();
+        DoEvaluateGpu<float>(context);
         return;
     case EValueType::Float64:
-        DoEvaluateGpu<double>();
+        DoEvaluateGpu<double>(context);
         return;
     }
 }
 
 template <class T>
-void TPermuteNode::DoEvaluateGpu()
+void TPermuteNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
     auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
     Permute(
+        context.Stream,
         input,
         output,
         InputShape_,
@@ -1251,7 +1246,6 @@ void TPermuteNode::DoEvaluateGpu()
         PermutationPtr_,
         GetDimensions(),
         GetElementCount());
-    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
 }
 
 TTensorMeta TPermuteNode::CalculateMeta(const TTensorMeta& input, const std::vector<int64_t>& permutation)
@@ -1370,14 +1364,14 @@ void TReplaceSliceNode::EvaluateCpu()
         (end - begin) * GetElementSize());
 }
 
-void TReplaceSliceNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+void TReplaceSliceNode::EvaluateGpu(const TEvaluationContext& context)
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        DoEvaluateGpu<float>();
+        DoEvaluateGpu<float>(context);
         return;
     case EValueType::Float64:
-        DoEvaluateGpu<double>();
+        DoEvaluateGpu<double>(context);
         return;
     default:
         THROW("GPU inference does not support this value type", VAR(GetValueType()));
@@ -1385,7 +1379,7 @@ void TReplaceSliceNode::EvaluateGpu(const TEvaluationContext& /*context*/)
 }
 
 template <class T>
-void TReplaceSliceNode::DoEvaluateGpu()
+void TReplaceSliceNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
     auto* input = reinterpret_cast<T*>(Input_->GetOutput());
     auto* replacement = reinterpret_cast<const T*>(Replacement_->GetOutput());
@@ -1393,6 +1387,7 @@ void TReplaceSliceNode::DoEvaluateGpu()
     auto* end = reinterpret_cast<const int64_t*>(End_->GetOutput());
 
     ReplaceSlice(
+        context.Stream,
         input,
         Input_->GetElementCount(),
         replacement,
@@ -1446,14 +1441,14 @@ void TSlicedSoftmaxNode::EvaluateCpu()
     }
 }
 
-void TSlicedSoftmaxNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+void TSlicedSoftmaxNode::EvaluateGpu(const TEvaluationContext& context)
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        DoEvaluateGpu<float>();
+        DoEvaluateGpu<float>(context);
         return;
     case EValueType::Float64:
-        DoEvaluateGpu<double>();
+        DoEvaluateGpu<double>(context);
         return;
     default:
         THROW("GPU inference does not support this value type", VAR(GetValueType()));
@@ -1496,15 +1491,13 @@ void TSlicedSoftmaxNode::DoEvaluateCpu()
 }
 
 template <class T>
-void TSlicedSoftmaxNode::DoEvaluateGpu()
+void TSlicedSoftmaxNode::DoEvaluateGpu(const TEvaluationContext& context)
 {
     auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
     auto* prefixSizePtr = reinterpret_cast<int64_t*>(PrefixSize_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
 
-    SlicedSoftmax(input, output, prefixSizePtr, GetElementCount());
-
-    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+    SlicedSoftmax(context.Stream, input, output, prefixSizePtr, GetElementCount());
 }
 
 } // namespace NHamKaas

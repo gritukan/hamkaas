@@ -49,9 +49,9 @@ extern "C" TCompilationResult HamKaasCompileModel(
 
     try {
         auto rootNode = NHamKaas::ParseScript(script);
-        auto model = new NHamKaas::TModel(static_cast<const TBootstrap*>(handle), std::move(rootNode));
+        auto model = std::make_unique<NHamKaas::TModel>(static_cast<const TBootstrap*>(handle), std::move(rootNode));
         model->Compile(options, constants);
-        return {model, nullptr};
+        return {model.release(), nullptr};
     } catch (const std::exception& e) {
         char* message = strdup(e.what());
         assert(message && "Out of memory for error");

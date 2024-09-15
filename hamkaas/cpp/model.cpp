@@ -22,6 +22,16 @@ TModel::TModel(const TBootstrap* bootstrap, TNodeBasePtr rootNode)
 
 TModel::~TModel()
 {
+    if (Stream_) {
+        CUDA_ASSERT(cudaStreamDestroy(Stream_));
+    }
+    if (Graph_) {
+        CUDA_ASSERT(cudaGraphDestroy(Graph_));
+    }
+    if (GraphExec_) {
+        CUDA_ASSERT(cudaGraphExecDestroy(GraphExec_));
+    }
+
     if (MemoryPool_) {
         if (UseGpu_) {
             CUDA_ASSERT(cudaFree(MemoryPool_));
@@ -51,6 +61,24 @@ void TModel::Compile(
     AllocateMemory();
     FillConstants(constants);
     InitializeNodes();
+
+    // If GPU is used, we precompile a CUDA graph to evaluate it later.
+    if (UseGpu_) {
+        CUDA_CHECK_ERROR(cudaStreamCreate(&Stream_));
+        CUDA_CHECK_ERROR(cudaStreamBeginCapture(Stream_, cudaStreamCaptureModeGlobal));
+
+        for (auto* node : EvaluationOrder_) {
+            node->EvaluateGpu(TEvaluationContext{
+                .Bootstrap = Bootstrap_,
+                .Device = Device_.get(),
+                .Stream = Stream_,
+            });
+        }
+
+        CUDA_CHECK_ERROR(cudaGraphCreate(&Graph_, 0));
+        CUDA_CHECK_ERROR(cudaStreamEndCapture(Stream_, &Graph_));
+        CUDA_CHECK_ERROR(cudaGraphInstantiate(&GraphExec_, Graph_, nullptr, nullptr, 0));
+    }
 }
 
 void TModel::Evaluate(
@@ -68,16 +96,17 @@ void TModel::Evaluate(
         Device_->CopyToDevice(buffer, it->second, inputNode->GetOutputSize());
     }
 
-    TEvaluationContext context{
-        .Bootstrap = Bootstrap_,
-        .Device = Device_.get(),
-    };
-
-    // Now evaluate all the nodes in order.
-    for (auto* node : EvaluationOrder_) {
-        if (UseGpu_) {
-            node->EvaluateGpu(context);
-        } else {
+    if (UseGpu_) {
+        //CUDA_CHECK_ERROR(cudaGraphLaunch(GraphExec_, 0));
+        for (auto* node : EvaluationOrder_) {
+            node->EvaluateGpu(TEvaluationContext{
+                .Bootstrap = Bootstrap_,
+                .Device = Device_.get(),
+                .Stream = Stream_,
+            });
+        }
+    } else {
+        for (auto* node : EvaluationOrder_) {
             node->EvaluateCpu();
         }
     }

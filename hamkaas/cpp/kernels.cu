@@ -44,6 +44,7 @@ __global__ void SumTensorsBroadcastKernel(
 
 template <class T>
 void SumTensorsBroadcast(
+    cudaStream_t stream,
     const T* lhs,
     const T* rhs,
     T* output,
@@ -56,7 +57,7 @@ void SumTensorsBroadcast(
     int64_t blocks = (outputSize + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    SumTensorsBroadcastKernel<T><<<blocks, ThreadsPerBlock>>>(
+    SumTensorsBroadcastKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
         lhs,
         rhs,
         output,
@@ -68,6 +69,7 @@ void SumTensorsBroadcast(
 
 #define INSTANTIATE(T) \
     template void SumTensorsBroadcast( \
+        cudaStream_t stream, \
         const T* lhs, \
         const T* rhs, \
         T* output, \
@@ -92,6 +94,7 @@ __global__ void ReLUKernel(
 
 template <class T>
 void ReLU(
+    cudaStream_t stream,
     const T* input,
     T* output,
     int64_t size)
@@ -100,11 +103,12 @@ void ReLU(
     int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    ReLUKernel<T><<<blocks, ThreadsPerBlock>>>(input, output, size);
+    ReLUKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(input, output, size);
 }
 
 #define INSTANTIATE(T) \
     template void ReLU( \
+        cudaStream_t stream, \
         const T* input, \
         T* output, \
         int64_t size);
@@ -125,6 +129,7 @@ __global__ void SiLUKernel(
 
 template <class T>
 void SiLU(
+    cudaStream_t stream,
     const T* input,
     T* output,
     int64_t size)
@@ -133,11 +138,12 @@ void SiLU(
     int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    SiLUKernel<T><<<blocks, ThreadsPerBlock>>>(input, output, size);
+    SiLUKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(input, output, size);
 }
 
 #define INSTANTIATE(T) \
     template void SiLU( \
+        cudaStream_t stream, \
         const T* input, \
         T* output, \
         int64_t size);
@@ -187,6 +193,7 @@ __global__ void RMSNormKernel(
 
 template <class T>
 void RMSNorm(
+    cudaStream_t stream,
     const T* input,
     const T* weights,
     T* output,
@@ -194,11 +201,12 @@ void RMSNorm(
     T epsilon)
 {
     constexpr int64_t ThreadsPerBlock = 256;
-    RMSNormKernel<T><<<1, ThreadsPerBlock>>>(input, weights, output, size, epsilon);
+    RMSNormKernel<T><<<1, ThreadsPerBlock, 0, stream>>>(input, weights, output, size, epsilon);
 }
 
 #define INSTANTIATE(T) \
     template void RMSNorm( \
+        cudaStream_t stream, \
         const T* input, \
         const T* weights, \
         T* output, \
@@ -223,6 +231,7 @@ __global__ void ComplexHadamardProductKernel(
 
 template <class T>
 void ComplexHadamardProduct(
+    cudaStream_t stream,
     const T* lhs,
     const T* rhs,
     T* output,
@@ -232,11 +241,12 @@ void ComplexHadamardProduct(
     int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    ComplexHadamardProductKernel<T><<<blocks, ThreadsPerBlock>>>(lhs, rhs, output, size);
+    ComplexHadamardProductKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(lhs, rhs, output, size);
 }
 
 #define INSTANTIATE(T) \
     template void ComplexHadamardProduct( \
+        cudaStream_t stream, \
         const T* lhs, \
         const T* rhs, \
         T* output, \
@@ -259,6 +269,7 @@ __global__ void HadamardProductKernel(
 
 template <class T>
 void HadamardProduct(
+    cudaStream_t stream,
     const T* lhs,
     const T* rhs,
     T* output,
@@ -268,11 +279,12 @@ void HadamardProduct(
     int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    HadamardProductKernel<T><<<blocks, ThreadsPerBlock>>>(lhs, rhs, output, size);
+    HadamardProductKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(lhs, rhs, output, size);
 }
 
 #define INSTANTIATE(T) \
     template void HadamardProduct( \
+        cudaStream_t stream, \
         const T* lhs, \
         const T* rhs, \
         T* output, \
@@ -348,21 +360,73 @@ __global__ void SoftmaxKernel(
 
 template <class T>
 void SlicedSoftmax(
+    cudaStream_t stream,
     const T* input,
     T* output,
     int64_t* prefixSizePtr,
     int64_t size)
 {
     constexpr int64_t ThreadsPerBlock = 256;
-    SoftmaxKernel<T><<<1, ThreadsPerBlock>>>(input, output, prefixSizePtr, size);
+    SoftmaxKernel<T><<<1, ThreadsPerBlock, 0, stream>>>(input, output, prefixSizePtr, size);
 }
 
 #define INSTANTIATE(T) \
     template void SlicedSoftmax( \
+        cudaStream_t stream, \
         const T* input, \
         T* output, \
         int64_t* prefixSizePtr, \
         int64_t size);
+FOR_ALL_TYPES(INSTANTIATE)
+#undef INSTANTIATE
+
+template <class T>
+__global__ void ReplaceKernel(
+    T* input,
+    int64_t inputSize,
+    const T* replacement,
+    int64_t replacementSize,
+    const int64_t* begin,
+    const int64_t* end)
+{
+    int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
+    for (int64_t index = threadIndex; index < replacementSize; index += gridDim.x * blockDim.x) {
+        input[index + *begin] = replacement[index];
+    }
+}
+
+template <class T>
+void ReplaceSlice(
+    cudaStream_t stream,
+    T* input,
+    int64_t inputSize,
+    const T* replacement,
+    int64_t replacementSize,
+    const int64_t* begin,
+    const int64_t* end)
+{
+    constexpr int64_t ThreadsPerBlock = 256;
+    int64_t blocks = (replacementSize + ThreadsPerBlock - 1) / ThreadsPerBlock;
+    blocks = std::min(blocks, MaxBlockCount);
+
+    ReplaceKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
+        input,
+        inputSize,
+        replacement,
+        replacementSize,
+        begin,
+        end);
+}
+
+#define INSTANTIATE(T) \
+    template void ReplaceSlice( \
+        cudaStream_t stream, \
+        T* input, \
+        int64_t inputSize, \
+        const T* replacement, \
+        int64_t replacementSize, \
+        const int64_t* begin, \
+        const int64_t* end);
 FOR_ALL_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
@@ -397,59 +461,8 @@ __global__ void PermuteKernel(
 }
 
 template <class T>
-__global__ void ReplaceKernel(
-    T* input,
-    int64_t inputSize,
-    const T* replacement,
-    int64_t replacementSize,
-    const int64_t* begin,
-    const int64_t* end)
-{
-    assert(*end - *begin == replacementSize);
-    assert(*begin >= 0);
-    assert(*end <= inputSize);
-
-    int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int64_t index = threadIndex; index < replacementSize; index += gridDim.x * blockDim.x) {
-        input[index + *begin] = replacement[index];
-    }
-}
-
-template <class T>
-void ReplaceSlice(
-    T* input,
-    int64_t inputSize,
-    const T* replacement,
-    int64_t replacementSize,
-    const int64_t* begin,
-    const int64_t* end)
-{
-    constexpr int64_t ThreadsPerBlock = 256;
-    int64_t blocks = (replacementSize + ThreadsPerBlock - 1) / ThreadsPerBlock;
-    blocks = std::min(blocks, MaxBlockCount);
-
-    ReplaceKernel<T><<<blocks, ThreadsPerBlock>>>(
-        input,
-        inputSize,
-        replacement,
-        replacementSize,
-        begin,
-        end);
-}
-
-#define INSTANTIATE(T) \
-    template void ReplaceSlice( \
-        T* input, \
-        int64_t inputSize, \
-        const T* replacement, \
-        int64_t replacementSize, \
-        const int64_t* begin, \
-        const int64_t* end);
-FOR_ALL_TYPES(INSTANTIATE)
-#undef INSTANTIATE
-
-template <class T>
 void Permute(
+    cudaStream_t stream,
     const T* input,
     T* output,
     int64_t* inputShape,
@@ -462,7 +475,7 @@ void Permute(
     int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    PermuteKernel<T><<<blocks, ThreadsPerBlock>>>(
+    PermuteKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
         input,
         output,
         inputShape,
@@ -474,6 +487,7 @@ void Permute(
 
 #define INSTANTIATE(T) \
     template void Permute( \
+        cudaStream_t stream, \
         const T* input, \
         T* output, \
         int64_t* inputShape, \

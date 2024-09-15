@@ -7,6 +7,7 @@ namespace NHamKaas {
 
 template <class T>
 void SumTensorsBroadcast(
+    cudaStream_t stream,
     const T* lhs,
     const T* rhs,
     T* output,
@@ -17,18 +18,21 @@ void SumTensorsBroadcast(
 
 template <class T>
 void ReLU(
+    cudaStream_t stream,
     const T* input,
     T* output,
     int64_t size);
 
 template <class T>
 void SiLU(
+    cudaStream_t stream,
     const T* input,
     T* output,
     int64_t size);
 
 template <class T>
 void RMSNorm(
+    cudaStream_t stream,
     const T* input,
     const T* weights,
     T* output,
@@ -37,6 +41,7 @@ void RMSNorm(
 
 template <class T>
 void ComplexHadamardProduct(
+    cudaStream_t stream,
     const T* lhs,
     const T* rhs,
     T* output,
@@ -44,6 +49,7 @@ void ComplexHadamardProduct(
 
 template <class T>
 void HadamardProduct(
+    cudaStream_t stream,
     const T* lhs,
     const T* rhs,
     T* output,
@@ -51,6 +57,7 @@ void HadamardProduct(
 
 template <class T>
 void SlicedSoftmax(
+    cudaStream_t stream,
     const T* input,
     T* output,
     int64_t* prefixSizePtr,
@@ -58,6 +65,7 @@ void SlicedSoftmax(
 
 template <class T>
 void ReplaceSlice(
+    cudaStream_t stream,
     T* input,
     int64_t inputSize,
     const T* replacement,
@@ -67,6 +75,7 @@ void ReplaceSlice(
 
 template <class T>
 void Permute(
+    cudaStream_t stream,
     const T* input,
     T* output,
     int64_t* inputShape,

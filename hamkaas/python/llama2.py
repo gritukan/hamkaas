@@ -407,6 +407,8 @@ def build_model(conf: Config, weights: TransformerWeights):
         v = hamkaas.MulNode(xb, wvs[l])
 
         # Apply RoPE rotation to the q and k vectors for each head
+        # q, k [head_count, head_size / 2, 2] * freq_cis_row[head_size / 2, 2] -> [head_count, head_size / 2, 2]
+
         for h in range(conf.n_heads):
             # Get the q and k vectors for this head
             q_head = hamkaas.SliceNode(q, h * head_size, (h + 1) * head_size)
