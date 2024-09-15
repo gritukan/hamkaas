@@ -438,8 +438,7 @@ def build_model(conf: Config, weights: TransformerWeights):
         k_m = hamkaas.SliceNode(key_cache, loff, loff + conf.seq_len * dim)
         k_m = hamkaas.ReshapeNode(k_m, [conf.seq_len, conf.n_heads, head_size])
         # [heads, seq_len, head_size]
-        #k_m = hamkaas.ReshapeNode(k_m, [conf.n_heads, head_size, conf.seq_len])
-        k_m = hamkaas.Tr(k_m)
+        k_m = hamkaas.Permute(k_m, [1, 0, 2])
 
         scores = hamkaas.MulNode(k_m, q_m) # [conf.n_heads, conf.seq_len, 1]
         # if l == 0:
@@ -463,7 +462,7 @@ def build_model(conf: Config, weights: TransformerWeights):
 
         v_m = hamkaas.SliceNode(value_cache, loff, loff + conf.seq_len * dim)
         v_m = hamkaas.ReshapeNode(v_m, [conf.seq_len, conf.n_heads, head_size])
-        v_m = hamkaas.Tr2(v_m) # [conf.n_heads, head_size, conf.seq_len]
+        v_m = hamkaas.Permute(v_m, [1, 2, 0])
         assert v_m.get_shape() == [conf.n_heads, head_size, conf.seq_len]
 
         scores = hamkaas.ReshapeNode(scores, [conf.n_heads, conf.seq_len, 1])

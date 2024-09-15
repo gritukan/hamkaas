@@ -397,35 +397,21 @@ class HadamardProductNode(HamKaasNode):
         return self.lhs.eval_slow(inputs, buffers, cache) * self.rhs.eval_slow(inputs, buffers, cache)
     
 
-class Tr(HamKaasNode):
-    def __init__(self, input: HamKaasNode):
+class Permute(HamKaasNode):
+    def __init__(self, input: HamKaasNode, permutation: List[int]):
         super().__init__()
 
         self.input = input
+        self.permutation = permutation
 
     def get_type(self) -> torch.dtype:
         return self.input.get_type()
     
     def get_shape(self) -> List[int]:
-        return [self.input.get_shape()[1], self.input.get_shape()[0], self.input.get_shape()[2]]
+        return [self.input.get_shape()[i] for i in self.permutation]
     
     def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return self.input.eval_slow(inputs, buffers, cache).transpose(0, 1)
-    
-class Tr2(HamKaasNode):
-    def __init__(self, input: HamKaasNode):
-        super().__init__()
-
-        self.input = input
-
-    def get_type(self) -> torch.dtype:
-        return self.input.get_type()
-    
-    def get_shape(self) -> List[int]:
-        return [self.input.get_shape()[1], self.input.get_shape()[2], self.input.get_shape()[0]]
-    
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return self.input.eval_slow(inputs, buffers, cache).transpose(0, 2).transpose(0, 1)
+        return self.input.eval_slow(inputs, buffers, cache).permute(self.permutation)
 
 
 class ReplaceSlice(HamKaasNode):
@@ -565,10 +551,8 @@ def create_script(node: HamKaasNode) -> HamkaasScript:
             return register_node(f"ComplexHadamardProductNode(${run(node.lhs)}, ${run(node.rhs)})")
         elif isinstance(node, HadamardProductNode):
             return register_node(f"HadamardProductNode(${run(node.lhs)}, ${run(node.rhs)})")
-        elif isinstance(node, Tr):
-            return register_node(f"Tr(${run(node.input)})")
-        elif isinstance(node, Tr2):
-            return register_node(f"Tr2(${run(node.input)})")
+        elif isinstance(node, Permute):
+            return register_node(f"Permute(${run(node.input)}, {node.permutation})")
         elif isinstance(node, ReplaceSlice):
             return register_node(f"ReplaceSlice(${run(node.input)}, ${run(node.replacement)}, {node.start}, {node.end})")
         elif isinstance(node, SlicedSoftmaxNode):
