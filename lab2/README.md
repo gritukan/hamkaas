@@ -104,3 +104,82 @@ Fix the problem and rerun the profiling. Compare workload analysis before and af
 Error message means that warps are not fully utilize the compute. This is because we have only one thread per block, so the warp is not full and we do not take advantage of the SIMD processing. To fix it, increase the number of threads per block to, say, 256.
 
 </details>
+
+
+## 01: Coalescing memory access
+
+In this task, you are provided a kernel that sums up two vectors. The kernel is located in the file `01.cu`.
+
+Take a look at the code. Unlike the program we wrote in a previous lab, the number of elements in the vector is greater than the number of threads in the block. Each thread is responsible for summing up a consecutive range of the vector elements. Compile the program and run the profiling. Look at the "Memory Workload Analysis" section of the details tab. Find the message "The memory access pattern for loads from L1TEX to L2 is not optimal. The granularity of an L1TEX request to L2 is a 128 byte cache line. That is 4 consecutive 32-byte sectors per L2 request. However, this kernel only accesses an average of 1.0 sectors out of the possible 4 sectors per cache line." Our memory access pattern is coalesced in each thread, so it seems to be optimal. Can you spot the problem here?
+
+<details>
+<summary> Answer </summary>
+Remember that threads are grouped in warps and warps are executed at the SM in a SIMD manner. Consider a warp of first 32 threads. Which elements do they access in the vector during the first instruction?
+
+<details>
+<summary> Spoiler </summary>
+They access elements $0, \frac{n}{k}, 2 \cdot \frac{2n}{k}, \ldots, 32 \cdot \frac{n}{k}$
+</details>
+
+These accesses are not coalesced, so this is the reason of wasted memory bandwidth since data in a cache line that was read is not used.
+</details>
+
+How to fix the problem? Change `AddVectorsKernelOpt` to fix the problem.
+
+<details>
+<summary> Answer </summary>
+
+Ensure that all threads in a warp access consecutive memory locations during a step. Consider a warp of the first 32 threads. During the first instruction we want them to access elements $0, 1, 2, \ldots, 31$. During the second instruction we want them to access elements $p, p + 1, p + 2, \ldots, p + 31$ for some $p$ and so on. How to implement that?
+
+<details>
+<summary> Solution </summary>
+```cpp
+int threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
+if (threadIndex >= k) {
+    return;
+}
+
+for (int index = threadIndex; index < n; index += k) {
+    out[index] = inA[index] + inB[index];
+}
+```
+</>
+
+</details>
+
+Run the profiling again. You should see a big decrease of the execution duration. Let's look at the issues tab again. The next issue is "This kernel grid is too small to fill the available resources on this device", meaning that the total number of threads is too small to occupy all the GPU. Fix it by increasing `K` in the code. You should see a decrease in the execution time again.
+
+Congratulations! You have optimized the kernel by undertanding the GPU architecture.
+
+## 02: Matrix transposition
+
+In this task, you will implement a kernel that transposes a matrix efficiently. The code for the task is located in the file `02.cu`.
+
+For the simplicity we will assume that matrix is always of the size $32768 \times 32768$. It is square and its dimesions are divisible by powers of 2, so you can avoid handling some edge cases.
+
+The most trivial kernel is already implemented in the file. Run it and it will report kernel execution duration and throughput. On my NVIDIA H100 GPU the result was about `2.9TB/s`. Let's make it faster!
+
+The first problem should be already familiar to you from the previous problem. Look at the input matrix access pattern. It is not coalesced. Fix it by changing the kernel code.
+
+<details>
+<summary> Solution </summary>
+```cpp
+__global__ void TransposeMatrixKernel(int* in, int* out)
+{
+    int x = blockIdx.x * BLOCK_SIZE + threadIdx.x;
+    int baseY = blockIdx.y * BLOCK_SIZE + threadIdx.y;
+
+    constexpr int OFFSET = BLOCK_SIZE / THREAD_SIZE;
+    for (int index = 0; index < BLOCK_SIZE; index += OFFSET) {
+        int y = baseY + index;
+        out[y * SIZE + x] = in[x * SIZE + y];
+    }
+}
+```
+</details>
+
+After this fix the throughput should increase. My result was about `3.2TB/s`. Let's run the profiler to see what we can do next. Look at "Memory Workload Analysis" section. We see the issue about the non-coalesced memory access pattern again! Can you spot the problem? Think about the possible fix.
+
+<details>
+<summary> Solution </summary>
+```cpp
