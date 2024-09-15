@@ -6,14 +6,14 @@ from typing import List, Tuple
 
 import torch
 
-# For now, we support only these types for olejit.
+# For now, we support only these types for hamkaas.
 # The only exception is the output tensor that can be of integer type also.
 _SUPPORTED_TENSOR_TYPES = [torch.float16, torch.float32, torch.float64]
 
 # For now, we support only vectors and matrices.
 _MAX_TENSOR_DIMS = 2
 
-class OlejitNode(ABC):
+class HamkaasNode(ABC):
     def __init__(self):
         pass
 
@@ -26,7 +26,7 @@ class OlejitNode(ABC):
         ...
 
 
-class InputTensor(OlejitNode):
+class InputTensor(HamkaasNode):
     def __init__(self, name: str, type: torch.dtype, shape: List[int]):
         super().__init__()
 
@@ -49,7 +49,7 @@ class InputTensor(OlejitNode):
         return self.name
 
 
-class ConstantTensor(OlejitNode):
+class ConstantTensor(HamkaasNode):
     def __init__(self, tensor: torch.Tensor, name: str = None):
         super().__init__()
 
@@ -79,8 +79,8 @@ class ConstantTensor(OlejitNode):
         return self.tensor
 
 
-class SumNode(OlejitNode):
-    def __init__(self, lhs: OlejitNode, rhs: OlejitNode):
+class SumNode(HamkaasNode):
+    def __init__(self, lhs: HamkaasNode, rhs: HamkaasNode):
         super().__init__()
 
         if lhs.get_type() != rhs.get_type():
@@ -101,8 +101,8 @@ class SumNode(OlejitNode):
         return self.lhs.get_shape()
 
 
-class MulNode(OlejitNode):
-    def __init__(self, lhs: OlejitNode, rhs: OlejitNode):
+class MulNode(HamkaasNode):
+    def __init__(self, lhs: HamkaasNode, rhs: HamkaasNode):
         super().__init__()
 
         if lhs.get_type() != rhs.get_type():
@@ -121,8 +121,8 @@ class MulNode(OlejitNode):
         return [self.lhs.get_shape()[0], self.rhs.get_shape()[1]]
     
 
-class ReLUNode(OlejitNode):
-    def __init__(self, input: OlejitNode):
+class ReLUNode(HamkaasNode):
+    def __init__(self, input: HamkaasNode):
         super().__init__()
 
         self.input = input
@@ -134,8 +134,8 @@ class ReLUNode(OlejitNode):
         return self.input.get_shape()
     
 
-class SiLUNode(OlejitNode):
-    def __init__(self, input: OlejitNode):
+class SiLUNode(HamkaasNode):
+    def __init__(self, input: HamkaasNode):
         super().__init__()
 
         self.input = input
@@ -148,7 +148,7 @@ class SiLUNode(OlejitNode):
     
 
 @dataclass
-class OlejitScript:
+class HamkaasScript:
     script: str
     constants: dict[str, torch.Tensor]
 
@@ -157,14 +157,14 @@ class OlejitScript:
         self.constants = {}
 
 
-def create_script(node: OlejitNode) -> OlejitScript:
-    result = OlejitScript()
+def create_script(node: HamkaasNode) -> HamkaasScript:
+    result = HamkaasScript()
 
     node_to_index = {}
 
     next_constant_tensor_id = 0
 
-    def run(node: OlejitNode) -> int:
+    def run(node: HamkaasNode) -> int:
         if id(node) in node_to_index:
             return node_to_index[id(node)]
 

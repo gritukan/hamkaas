@@ -2,8 +2,8 @@ import ctypes
 import torch
 
 class Inverser:
-    def __init__(self, olejit_path):
-        self._lib = ctypes.CDLL(olejit_path)
+    def __init__(self, hamkaas_path):
+        self._lib = ctypes.CDLL(hamkaas_path)
         self._lib.InverseElements.restype = ctypes.POINTER(ctypes.c_ubyte)
 
     def inverse(self, x):
@@ -19,7 +19,7 @@ class Inverser:
 
 
 x = torch.tensor([[0, 2], [3, 4]], dtype=torch.float32)
-inverser = Inverser("../cpp/libolejit.so")
+inverser = Inverser("../cpp/libhamkaas.so")
 
 print(inverser.inverse(x))
 
