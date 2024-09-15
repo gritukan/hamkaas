@@ -132,3 +132,8 @@ When you are ready, compile the code using `make 04` and run the `04` binary. No
 
 If you see 90+% accuracy, good job!
 
+## 05: CUTLASS
+
+This task is not ready yet.
+
+[CUTLASS](https://github.com/NVIDIA/cutlass) is another library by NVIDIA that contains efficient implementations of matrix multiplication and allows fusing other kernels with it (see example [here](https://github.com/NVIDIA/cutlass/blob/main/examples/12_gemm_bias_relu/gemm_bias_relu.cu)). Unlike cuBLAS and cuDNN this library is fully open-source, so you can take a look at how the matrix multiplication kernels are implemented.
