@@ -38,7 +38,7 @@ NVIDIA Nsight Systems is a system-wide performance analyzer. It collects events 
 
 Both of these tools have excellent documentation (see [Nsight Systems](https://docs.nvidia.com/nsight-systems/) and [Nsight Compute](https://docs.nvidia.com/nsight-compute/)). It is definitely not required to read all of it to use these tools, but it is a good idea at least to look at the list of possible options and metrics that can be collected in order to understand the limitations of these tools. Simple usages of these tools will be shown in this lab later.
 
-## 00: First steps with Nsight Systems
+## 00: First Steps with Nsight Systems
 
 Now it is the time to make your hands dirty and profile something. In this task you will profile program that is located in file `00.cu`.
 
@@ -149,7 +149,7 @@ That's it for now! You did your first kernel optimizations using NVIDIA Nsight. 
 
 If you want to go even deeper with these tools read the official documentation or watch some tutorials on the NVIDIA YouTube channel with useful features and tricks.
 
-## 01: Coalescing memory access
+## 01: Coalescing Memory Access
 
 In this task, you are provided a kernel that sums up two vectors. The kernel is located in the file `01.cu`.
 
@@ -225,7 +225,7 @@ How to fix the problem? Rewrite `KernelOpt` to avoid warp divergence. Run the co
 `F(p, x)` is actually $(2p - 1) \cdot x$, so you can just replace `if` with `result += (2 * b[i + j] - 1) * c[j];`.
 </details>
 
-# 03: Negative complexity
+# 03: Negative Complexity
 
 Open the file `03.cu`. Look at the `Kernel` kernel and try to understand what it does.
 
@@ -247,9 +247,9 @@ Another manifestation of this issue is the case if the number of blocks is a lit
 
 This story is one of the reasons why it is advisable to make all the layer sizes in deep learning models divisible by a large power of 2. All the threads are becoming more homogeneous and there are less number of divergences of the threads.
 
-# 05: Streams and Graphs
+# 04: Streams and Graphs
 
-Open the file `05.cu`. Look at the `DoSlow` function and try to understand what it does.
+Open the file `04.cu`. Look at the `DoSlow` function and try to understand what it does.
 
 <details>
 <summary> Answer </summary>
@@ -330,3 +330,35 @@ There is no per-kernel detalisation in the timeline since all the kernels are fu
 Open the profile in the Nsight Compute. You will see just a number of your kernel launches without any changes. This is because graph API is about the flow of kernels, not the kernels themselves.
 
 Joining kernel launches using streams and graphs is a popular way to optimize GPU workloads. Again, this is possible because GPU workloads are more predictable than the CPU ones, so you can build a static graph of the computation.
+
+## 05: Explicit CUDA Graphs
+
+Open the file `05.cu`. Look at the `DoSlow` function and try to understand what it does.
+
+<details>
+<summary> Answer </summary>
+This is a (little bit weird) way to find the sum of the elements of the array using CUDA. For N which is a power of two it puts input elements on the positions from N to 2N - 1 (inclusive) and then tracts the array as a full binary tree of depth log(N). The root of this tree is a element 1, the leaves are the elements of the input array on positions from N to 2N - 1 and the internal node i has two children: 2i and 2i + 1.
+
+Algorithm puts the sum of the leaves in the subtree to every node. So, the root will contain the sum of all the elements of the array. To do so, it goes from the deep levels of the tree to the root and sets the value of the parent node to the sum of the values of its children. You can see how is it done in `DoSlow` function.
+</detils>
+
+Do you see how this can be optimized?
+
+<details>
+<summary> Answer </summary>
+Note, that all the kernels are executed sequentially. However, there is no data dependency between nodes of the same level of the tree. Ideally, this algorithm should consist of log(N) phases with i-th phase launching all the kernels of the i-th level of the tree.
+</details>
+
+We cannot express such control flow via stream capturing since it is just a queue. To express such control flow we need to use explicit CUDA graphs. Let's have a look at how to do it.
+
+To create an empty graph, use
+```cpp
+cudaGraph_t graph;
+CUDA_CHECK_ERROR(cudaGraphCreate(&graph, 0));
+```
+
+A node with the kernel (and possibly some dependencies) can be added to the graph with [cudaGraphAddKernelNode](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__GRAPH.html#group__CUDART__GRAPH_1gcbdee72d9f3b4ce17654ee197fc02651) function. I intentionally provide just a link to the documentation here. Reading official NVIDIA documentation is an important skill if you want to work with CUDA.
+
+After you added all the nodes to the graph, you can compile it with `cudaGraphInstantiate` and run it with `cudaGraphLaunch` just like before.
+
+Implement `DoFast` function to speed up the algorithm. Uncomment its usage in `main` and run the code. You should see that the execution time is decreased.
