@@ -20,26 +20,25 @@ __global__ void DoSomethingKernel(double* ptr, int n)
 
 int main()
 {
-    constexpr int N = 10000;
+    constexpr int N = 30000;
 
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 2; i++) {
         std::vector<double> data(N, 0);
         for (auto& x : data) {
-            for (int j = 0; j < 1000; j++) {
-                x += 0.3;
-                x = cos(x);
-            }
+            x = rand() / double(RAND_MAX);
         }
 
         double* gpuData;
-        CUDA_CHECK_ERROR(cudaMalloc(&gpuData, N * sizeof(double)));
+        CUDA_CHECK_ERROR(cudaMalloc(&gpuData, N * sizeof(double)));    
+
         CUDA_CHECK_ERROR(cudaMemcpy(gpuData, data.data(), N * sizeof(double), cudaMemcpyHostToDevice));
     
-        constexpr int ThreadsPerBlock = 1;
+        constexpr int ThreadsPerBlock = 256;
         DoSomethingKernel<<<(N + ThreadsPerBlock - 1) / ThreadsPerBlock, ThreadsPerBlock>>>(gpuData, N);
-        CUDA_CHECK_KERNEL();
 
         CUDA_CHECK_ERROR(cudaMemcpy(data.data(), gpuData, N * sizeof(double), cudaMemcpyDeviceToHost));
+
         CUDA_CHECK_ERROR(cudaFree(gpuData));
     }
+
 }
