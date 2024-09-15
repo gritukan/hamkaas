@@ -560,7 +560,7 @@ class HamKaasModel:
 
     def __del__(self) -> None:
         # (lab4/01): Your code here: free model.
-        self._plugin.lib.HamKaasFreeModel(self._plugin.handle, self._model_ptr)
+        pass
 
     def evaluate(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         named_tensors = []
