@@ -225,3 +225,24 @@ How to fix the problem? Rewrite `KernelOpt` to avoid warp divergence. Run the co
 `F(p, x)` is actually $(2p - 1) \cdot x$, so you can just replace `if` with `result += (2 * b[i + j] - 1) * c[j];`.
 </details>
 
+# 03: Negative complexity
+
+Open the file `03.cu`. Look at the `Kernel` kernel and try to understand what it does.
+
+<details>
+<summary> Answer </summary>
+This kernel fills an array `a`` of size `n` with 100 in a little bit weird but correct way.
+</details>
+
+There are two runs of the kernel in the code. The first run is with `N1 = 1024` and the second one is with `N2 = 1000`. Run the code. You can see that the first one is faster by about 10%. This is contrintuitive since the number of elements is bigger in this case. Why is it so?
+
+<details>
+<summary> Answer </summary>
+If statement checking if index is bigger than n is not executed in case of N = 1024, since 1024 is divisible by a block size and warp size. In case of N = 1000, the statement is executed for the last warp leading to the warp divergence.
+</details>
+
+Here you can see in important property of the massively parallel computation. The latency of the execution is the latency of the slowest thread or a warp. It is sufficient to have only one thread that is slow to make all the kernel slow and wasting the resources of the GPU.
+
+Another manifestation of this issue is the case if the number of blocks is a little bit bigger than the number of SMs. In this case, after the first batch of blocks is executed, only a small number of SMs will be used leading to the underutilization of the GPU. This can be fixed either by changing the number of blocks or by building better pipelines so there is no barrier after the kernel and the next kernel can be run without waiting for the previous one to complete.
+
+This story is one of the reasons why it is advisable to make all the layer sizes in deep learning models divisible by a large power of 2. All the threads are becoming more homogeneous and there are less number of divergences of the threads.
