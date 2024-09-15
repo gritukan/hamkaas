@@ -1,5 +1,7 @@
 #include "node.h"
 
+#include "error.h"
+
 #include <stdexcept>
 #include <cassert>
 #include <cmath>
@@ -58,7 +60,7 @@ std::vector<char> TInputNode::EvaluateCpu(const std::unordered_map<std::string, 
 {
     auto inputIt = inputs.find(Name_);
     if (inputIt == inputs.end()) {
-        throw std::runtime_error("Input not found");
+        THROW("Input not found", VAR(Name_));
     }
 
     const auto* input = inputIt->second;
@@ -116,7 +118,7 @@ std::vector<char> TSumNode::EvaluateCpu(const std::unordered_map<std::string, co
     case EValueType::Int64:
         return DoEvaluateCpu<int64_t>(inputs);
     default:
-        throw std::runtime_error("CPU inference does not support this value type");
+        THROW("CPU inference does not support this value type", VAR(GetValueType()));
     }
 }
 
@@ -159,16 +161,16 @@ std::vector<char> TSumNode::DoEvaluateCpu(const std::unordered_map<std::string, 
 TTensorMeta TSumNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
 {
     if (lhs.ValueType != rhs.ValueType) {
-        throw std::runtime_error("Different value types");
+        THROW("Different value types", VAR(lhs.ValueType), VAR(rhs.ValueType));
     }
 
     if (lhs.Shape.size() != rhs.Shape.size()) {
-        throw std::runtime_error("Different number of dimensions");
+        THROW("Different number of dimensions", VAR(lhs.Shape.size()), VAR(rhs.Shape.size()));
     }
 
     for (int index = 0; index < lhs.Shape.size(); ++index) {
         if (lhs.Shape[index] != rhs.Shape[index] && rhs.Shape[index] != 1) {
-            throw std::runtime_error("Incompatible shapes for sum");
+            THROW("Incompatible shapes for sum", VAR(index), VAR(lhs.Shape[index]), VAR(rhs.Shape[index]));
         }
     }
 
@@ -194,15 +196,15 @@ const TNodeBasePtr& TMulNode::GetRhs() const
 TTensorMeta TMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
 {
     if (lhs.ValueType != rhs.ValueType) {
-        throw std::runtime_error("Different value types");
+        THROW("Different value types", VAR(lhs.ValueType), VAR(rhs.ValueType));
     }
 
     if (lhs.GetDimensions() != 2 || rhs.GetDimensions() != 2) {
-        throw std::runtime_error("Matrix multiplication is supported only for 2D tensors");
+        THROW("Matrix multiplication is supported only for 2D tensors", VAR(lhs.GetDimensions()), VAR(rhs.GetDimensions()));
     }
 
     if (lhs.Shape[1] != rhs.Shape[0]) {
-        throw std::runtime_error("Incompatible shapes for matrix multiplication");
+        THROW("Incompatible shapes for matrix multiplication", VAR(lhs.Shape[1]), VAR(rhs.Shape[0]));
     }
 
     return TTensorMeta{
@@ -225,7 +227,7 @@ std::vector<char> TMulNode::EvaluateCpu(const std::unordered_map<std::string, co
     case EValueType::Int64:
         return DoEvaluateCpu<int64_t>(inputs);
     default:
-        throw std::runtime_error("CPU inference does not support this value type");
+        THROW("CPU inference does not support this value type", VAR(GetValueType()));
     }
 }
 
@@ -282,7 +284,7 @@ std::vector<char> TReLUNode::EvaluateCpu(const std::unordered_map<std::string, c
     case EValueType::Int64:
         return DoEvaluateCpu<int64_t>(inputs);
     default:
-        throw std::runtime_error("CPU inference does not support this value type");
+        THROW("CPU inference does not support this value type", VAR(GetValueType()));
     }
 }
 
@@ -326,7 +328,7 @@ std::vector<char> TSiLUNode::EvaluateCpu(const std::unordered_map<std::string, c
     case EValueType::Int64:
         return DoEvaluateCpu<int64_t>(inputs);
     default:
-        throw std::runtime_error("CPU inference does not support this value type");
+        THROW("CPU inference does not support this value type", VAR(GetValueType()));
     }
 }
 

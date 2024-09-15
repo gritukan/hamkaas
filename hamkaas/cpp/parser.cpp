@@ -1,7 +1,8 @@
 #include "parser.h"
 
+#include "error.h"
+
 #include <optional>
-#include <stdexcept>
 #include <vector>
 
 // Removes space symbols from the script and splits it into expressions.
@@ -13,7 +14,7 @@ std::vector<std::string> PreprocessScript(const std::string& script)
     for (char c : script) {
         if (c == ';') {
             if (expression.empty()) {
-                throw std::runtime_error("Empty expression");
+                THROW("Empty expression");
             }
 
             expressions.push_back(expression);
@@ -24,7 +25,7 @@ std::vector<std::string> PreprocessScript(const std::string& script)
     }
 
     if (!expression.empty()) {
-        throw std::runtime_error("Unexpected end of script");
+        THROW("Unexpected end of expression", VAR(expression));
     }
 
     return expressions;
@@ -40,21 +41,22 @@ TNodeBasePtr ParseScript(const TScript& script)
 
         auto skip = [&] (char c) {
             if (ptr == expression.size()) {
-                throw std::runtime_error(std::string{"Unexpected end of expression, expected \'"} + c + "\'");
+                THROW("Unexpected end of expression", NVAR(expected, c), NVAR(position, ptr));
             }
             if (expression[ptr] != c) {
-                throw std::runtime_error(std::string{"Unexpected symbol, expected \'"} + c + "\', got \'" + expression[ptr] + "\'");
+                THROW("Unexpected symbol", NVAR(expected, c), NVAR(got, expression[ptr]), NVAR(position, ptr));
             }
             ++ptr;
         };
 
         auto parseInt = [&] {
             if (ptr == expression.size()) {
-                throw std::runtime_error("Unexpected end of expression, expected integer");
+                THROW("Unexpected end of expression, expected integer");
             }
             if (!std::isdigit(expression[ptr])) {
-                throw std::runtime_error("Unexpected symbol, expected integer");
+                THROW("Unexpected end of expression, expected integer", NVAR(got, expression[ptr]), NVAR(position, ptr));
             }
+
             int result = 0;
             while (ptr < expression.size() && std::isdigit(expression[ptr])) {
                 result = result * 10 + expression[ptr] - '0';
@@ -66,7 +68,7 @@ TNodeBasePtr ParseScript(const TScript& script)
 
         auto parseIntList = [&] {
             if (ptr == expression.size()) {
-                throw std::runtime_error("Unexpected end of expression");
+                THROW("Unexpected end of expression");
             }
 
             std::vector<int> result;
@@ -89,7 +91,7 @@ TNodeBasePtr ParseScript(const TScript& script)
 
         auto parseStringArg = [&] {
             if (ptr == expression.size()) {
-                throw std::runtime_error("Unexpected end of expression");
+                THROW("Unexpected end of expression");
             }
 
             std::string result;
@@ -115,8 +117,8 @@ TNodeBasePtr ParseScript(const TScript& script)
                 return EValueType::Int32;
             } else if (valueType == "int64") {
                 return EValueType::Int64;
-            } else {                
-                throw std::runtime_error("Unknown value type: " + valueType);
+            } else {      
+                THROW("Unknown value type", VAR(valueType));
             }
         };
 
@@ -126,7 +128,7 @@ TNodeBasePtr ParseScript(const TScript& script)
             skip('=');
             outputNodeIndex = parseInt();
             if (ptr < expression.size()) {
-                throw std::runtime_error("Unexpected symbols after the end of expression");
+                THROW("Unexpected symbols after the end of expression", NVAR(suffix, expression.substr(ptr)));
             }
 
             continue;
@@ -134,7 +136,7 @@ TNodeBasePtr ParseScript(const TScript& script)
 
         TNodeBasePtr node;
 
-        auto outputNodeIndex = parseInt();
+        auto nodeIndex = parseInt();
         skip('=');
 
         std::string nodeType;
@@ -161,7 +163,7 @@ TNodeBasePtr ParseScript(const TScript& script)
 
             auto constantIt = script.Constants.find(name);
             if (constantIt == script.Constants.end()) {
-                throw std::runtime_error("Constant \"" + name + "\" not found");
+                THROW("Constant not found", VAR(name));
             }
 
             const auto& constant = constantIt->second;
@@ -172,9 +174,12 @@ TNodeBasePtr ParseScript(const TScript& script)
             auto rhs = parseInt();
 
             auto lhsIt = nodes.find(lhs);
+            if (lhsIt == nodes.end()) {
+                THROW("Expression references unknown node", VAR(nodeIndex), VAR(lhs));
+            }
             auto rhsIt = nodes.find(rhs);
-            if (!lhs || !rhs) {
-                throw std::runtime_error("Expression references unknown node");
+            if (rhsIt == nodes.end()) {
+                THROW("Expression references unknown node", VAR(nodeIndex), VAR(rhs));
             }
 
             node = std::make_shared<TSumNode>(lhsIt->second, rhsIt->second);
@@ -184,9 +189,12 @@ TNodeBasePtr ParseScript(const TScript& script)
             auto rhs = parseInt();
 
             auto lhsIt = nodes.find(lhs);
+            if (lhsIt == nodes.end()) {
+                THROW("Expression references unknown node", VAR(nodeIndex), VAR(lhs));
+            }
             auto rhsIt = nodes.find(rhs);
-            if (lhsIt == nodes.end() || rhsIt == nodes.end()) {
-                throw std::runtime_error("Expression references unknown node");
+            if (rhsIt == nodes.end()) {
+                THROW("Expression references unknown node", VAR(nodeIndex), VAR(rhs));
             }
 
             node = std::make_shared<TMulNode>(lhsIt->second, rhsIt->second);
@@ -195,7 +203,7 @@ TNodeBasePtr ParseScript(const TScript& script)
 
             auto inputIt = nodes.find(input);
             if (inputIt == nodes.end()) {
-                throw std::runtime_error("Expression references unknown node");
+                THROW("Expression references unknown node", VAR(nodeIndex), VAR(input));
             }
 
             node = std::make_shared<TReLUNode>(inputIt->second);
@@ -204,32 +212,32 @@ TNodeBasePtr ParseScript(const TScript& script)
 
             auto inputIt = nodes.find(input);
             if (inputIt == nodes.end()) {
-                throw std::runtime_error("Expression references unknown node");
+                THROW("Expression references unknown node", VAR(nodeIndex), VAR(input));
             }
 
             node = std::make_shared<TSiLUNode>(inputIt->second);
         } else {
-            throw std::runtime_error("Unknown node type: " + nodeType);
+            THROW("Unknown node type", VAR(nodeIndex), VAR(nodeType));
         }
 
         skip(')');
 
         if (ptr < expression.size()) {
-            throw std::runtime_error("Unexpected symbols after the end of expression");
+            THROW("Unexpected symbols after the end of expression", NVAR(suffix, expression.substr(ptr)));
         }
 
-        if (!nodes.emplace(outputNodeIndex, node).second) {
-            throw std::runtime_error("Node is defined twice");
+        if (!nodes.emplace(nodeIndex, node).second) {
+            THROW("Node is defined twice", VAR(nodeIndex));
         }
     }
 
     if (!outputNodeIndex) {
-        throw std::runtime_error("Output node index is not defined");
+        THROW("Output node index is not defined");
     }
 
     auto outputNodeIt = nodes.find(*outputNodeIndex);
     if (outputNodeIt == nodes.end()) {
-        throw std::runtime_error("Output node references unknown node");
+        THROW("Output node references unknown node", VAR(*outputNodeIndex));
     }
 
     return outputNodeIt->second;

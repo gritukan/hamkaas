@@ -1,4 +1,6 @@
 #include "interface.h"
+
+#include "error.h"
 #include "model.h"
 #include "parser.h"
 
@@ -70,7 +72,7 @@ void DoInverseElements(float* inputTensor, float* outputTensor, int size)
 {
     for (int i = 0; i < size; ++i) {
         if (inputTensor[i] == 0.0) {
-            throw std::runtime_error("Division by zero");
+            THROW("Division by zero", NVAR(index, i));
         }
         outputTensor[i] = 1.0f / inputTensor[i];
     }
