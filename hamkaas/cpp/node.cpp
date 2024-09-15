@@ -187,49 +187,20 @@ void TSumNode::SetBuffer(char* buffer)
     RhsShape_ = LhsShape_ + GetDimensions();
 }
 
-void TSumNode::EvaluateCpu()
-{
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateCpu<float>();
-        return;
-    case EValueType::Float64:
-        DoEvaluateCpu<double>();
-        return;
-    default:
-        THROW("CPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
 void TSumNode::Initialize(IDevice* device)
 {
     device->CopyToDevice(LhsShape_, Inputs_[0]->GetShape().data(), GetDimensions() * sizeof(int64_t));
     device->CopyToDevice(RhsShape_, Inputs_[1]->GetShape().data(), GetDimensions() * sizeof(int64_t));
 }
 
-void TSumNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateGpu<float>(context);
-        return;
-    case EValueType::Float64:
-        DoEvaluateGpu<double>(context);
-        return;
-    default:
-        THROW("GPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
-template <class T>
-void TSumNode::DoEvaluateCpu()
+void TSumNode::EvaluateCpu()
 {
     const auto& lhs = Inputs_[0];
     const auto& rhs = Inputs_[1];
 
-    auto* lhsPtr = reinterpret_cast<const T*>(lhs->GetOutput());
-    auto* rhsPtr = reinterpret_cast<const T*>(rhs->GetOutput());
-    auto* outputPtr = reinterpret_cast<T*>(GetOutput());
+    auto* lhsPtr = reinterpret_cast<const float*>(lhs->GetOutput());
+    auto* rhsPtr = reinterpret_cast<const float*>(rhs->GetOutput());
+    auto* outputPtr = reinterpret_cast<float*>(GetOutput());
 
     for (int64_t index = 0; index < lhs->GetElementCount(); ++index) {
         std::vector<int64_t> rhsIndices(rhs->GetDimensions());
@@ -253,14 +224,13 @@ void TSumNode::DoEvaluateCpu()
     }
 }
 
-template <class T>
-void TSumNode::DoEvaluateGpu(const TEvaluationContext& context)
+void TSumNode::EvaluateGpu(const TEvaluationContext& context)
 {
     SumTensorsBroadcast(
         context.Stream,
-        reinterpret_cast<const T*>(Inputs_[0]->GetOutput()),
-        reinterpret_cast<const T*>(Inputs_[1]->GetOutput()),
-        reinterpret_cast<T*>(GetOutput()),
+        reinterpret_cast<const float*>(Inputs_[0]->GetOutput()),
+        reinterpret_cast<const float*>(Inputs_[1]->GetOutput()),
+        reinterpret_cast<float*>(GetOutput()),
         LhsShape_,
         RhsShape_,
         GetDimensions(),
@@ -271,6 +241,10 @@ TTensorMeta TSumNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& r
 {
     if (lhs.ValueType != rhs.ValueType) {
         THROW("Different value types", VAR(lhs.ValueType), VAR(rhs.ValueType));
+    }
+
+    if (lhs.ValueType != EValueType::Float32) {
+        THROW("Unsupported value type", VAR(lhs.ValueType));
     }
 
     if (lhs.Shape.size() != rhs.Shape.size()) {
@@ -312,6 +286,10 @@ TTensorMeta TMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& r
 {
     if (lhs.ValueType != rhs.ValueType) {
         THROW("Different value types", VAR(lhs.ValueType), VAR(rhs.ValueType));
+    }
+
+    if (lhs.ValueType != EValueType::Float32) {
+        THROW("Unsupported value type", VAR(lhs.ValueType));
     }
 
     if (lhs.GetDimensions() == 1) {
@@ -357,34 +335,6 @@ TTensorMeta TMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& r
     }
 }
 
-void TMulNode::EvaluateCpu()
-{
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateCpu<float>();
-        return;
-    case EValueType::Float64:
-        DoEvaluateCpu<double>();
-        return;
-    default:
-        THROW("CPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
-void TMulNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateGpu<float>(context);
-        return;
-    case EValueType::Float64:
-        DoEvaluateGpu<double>(context);
-        return;
-    default:
-        THROW("GPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
 void TMulNode::Initialize(IDevice* device)
 {
     auto [b, n, m, k] = GetParameters();
@@ -404,19 +354,18 @@ void TMulNode::Initialize(IDevice* device)
     device->CopyToDevice(OutputMatrices_, outputMatrices.data(), b * sizeof(char*));
 }
 
-template <class T>
-void TMulNode::DoEvaluateCpu()
+void TMulNode::EvaluateCpu()
 {
-    auto* lhs = reinterpret_cast<const T*>(Inputs_[0]->GetOutput());
-    auto* rhs = reinterpret_cast<const T*>(Inputs_[1]->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
+    auto* lhs = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
+    auto* rhs = reinterpret_cast<const float*>(Inputs_[1]->GetOutput());
+    auto* output = reinterpret_cast<float*>(GetOutput());
 
     auto [b, n, m, k] = GetParameters();
 
     for (int64_t matrixIndex = 0; matrixIndex < b; ++matrixIndex) {
         for (int64_t x = 0; x < n; x++) {
             for (int64_t y = 0; y < m; y++) {
-                T sum = 0.0;
+                float sum = 0.0;
                 for (int64_t index = 0; index < k; ++index) {
                     sum += lhs[(matrixIndex * n + x) * k + index] * rhs[(matrixIndex * k + index) * m + y];
                 }
@@ -426,23 +375,12 @@ void TMulNode::DoEvaluateCpu()
     }
 }
 
-template <class T>
-void TMulNode::DoEvaluateGpu(const TEvaluationContext& context)
+void TMulNode::EvaluateGpu(const TEvaluationContext& context)
 {
     auto [b, n, m, k] = GetParameters();
 
-    T One = 1;
-    T Zero = 0;
-
-    cudaDataType_t type;
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        type = CUDA_R_32F;
-        break;
-    case EValueType::Float64:
-        type = CUDA_R_64F;
-        break;
-    }
+    float One = 1;
+    float Zero = 0;
 
     CUBLAS_CHECK_ERROR(cublasSetStream(context.Bootstrap->GetCublasHandle(), context.Stream));
 
@@ -455,57 +393,35 @@ void TMulNode::DoEvaluateGpu(const TEvaluationContext& context)
         k,
         &One,
         LhsMatrices_,
-        type,
+        CUDA_R_32F,
         k,
         RhsMatrices_,
-        type,
+        CUDA_R_32F,
         m,
         &Zero,
         OutputMatrices_,
-        type,
+        CUDA_R_32F,
         n,
         b,
-        type,
+        CUDA_R_32F,
         CUBLAS_GEMM_DEFAULT_TENSOR_OP));
 
-    if (type == CUDA_R_32F) {
-        for (int index = 0; index < b; ++index) {
-            auto* inputAddress = TransposedProductBuffer_ + index * n * m * sizeof(T);
-            CUBLAS_CHECK_ERROR(cublasSgeam(
-                context.Bootstrap->GetCublasHandle(),
-                CUBLAS_OP_T,
-                CUBLAS_OP_T,
-                m,
-                n,
-                reinterpret_cast<float*>(&One),
-                reinterpret_cast<float*>(inputAddress),
-                n,
-                reinterpret_cast<float*>(&Zero),
-                reinterpret_cast<float*>(inputAddress),
-                n,
-                reinterpret_cast<float*>(GetOutput() + index * n * m * sizeof(T)),
-                m));
-        }
-    } else if (type == CUDA_R_64F) {
-        for (int index = 0; index < b; ++index) {
-            auto* inputAddress = TransposedProductBuffer_ + index * n * m * sizeof(T);
-            CUBLAS_CHECK_ERROR(cublasDgeam(
-                context.Bootstrap->GetCublasHandle(),
-                CUBLAS_OP_T,
-                CUBLAS_OP_T,
-                m,
-                n,
-                reinterpret_cast<double*>(&One),
-                reinterpret_cast<double*>(inputAddress),
-                n,
-                reinterpret_cast<double*>(&Zero),
-                reinterpret_cast<double*>(inputAddress),
-                n,
-                reinterpret_cast<double*>(GetOutput() + index * n * m * sizeof(T)),
-                m));
-        }
-    } else {
-        THROW("Unsupported value type", VAR(GetValueType()));
+    for (int index = 0; index < b; ++index) {
+        auto* inputAddress = TransposedProductBuffer_ + index * n * m * sizeof(float);
+        CUBLAS_CHECK_ERROR(cublasSgeam(
+            context.Bootstrap->GetCublasHandle(),
+            CUBLAS_OP_T,
+            CUBLAS_OP_T,
+            m,
+            n,
+            reinterpret_cast<float*>(&One),
+            reinterpret_cast<float*>(inputAddress),
+            n,
+            reinterpret_cast<float*>(&Zero),
+            reinterpret_cast<float*>(inputAddress),
+            n,
+            reinterpret_cast<float*>(GetOutput() + index * n * m * sizeof(float)),
+            m));
     }
 }
 
@@ -541,46 +457,18 @@ TReLUNode::TReLUNode(TNodeBasePtr input)
 
 void TReLUNode::EvaluateCpu()
 {
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateCpu<float>();
-        return;
-    case EValueType::Float64:
-        DoEvaluateCpu<double>();
-        return;
-    default:
-        THROW("CPU inference does not support this value type", VAR(GetValueType()));
+    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
+    auto* output = reinterpret_cast<float*>(GetOutput());
+
+    for (int64_t index = 0; index < Inputs_[0]->GetElementCount(); ++index) {
+        output[index] = std::max<float>(0.0, input[index]);
     }
 }
 
 void TReLUNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateGpu<float>(context);
-        return;
-    case EValueType::Float64:
-        DoEvaluateGpu<double>(context);
-        return;
-    }
-}
-
-template <class T>
-void TReLUNode::DoEvaluateCpu()
-{
-    auto* input = reinterpret_cast<const T*>(Inputs_[0]->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
-
-    for (int64_t index = 0; index < Inputs_[0]->GetElementCount(); ++index) {
-        output[index] = std::max<T>(0.0, input[index]);
-    }
-}
-
-template <class T>
-void TReLUNode::DoEvaluateGpu(const TEvaluationContext& context)
-{
-    auto* input = reinterpret_cast<const T*>(Inputs_[0]->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
+    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
+    auto* output = reinterpret_cast<float*>(GetOutput());
 
     ReLU(context.Stream, input, output, Inputs_[0]->GetElementCount());
 }
@@ -591,46 +479,18 @@ TSiLUNode::TSiLUNode(TNodeBasePtr input)
 
 void TSiLUNode::EvaluateCpu()
 {
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateCpu<float>();
-        return;
-    case EValueType::Float64:
-        DoEvaluateCpu<double>();
-        return;
-    default:
-        THROW("CPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
-void TSiLUNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateGpu<float>(context);
-        return;
-    case EValueType::Float64:
-        DoEvaluateGpu<double>(context);
-        return;
-    }
-}
-
-template <class T>
-void TSiLUNode::DoEvaluateCpu()
-{
-    auto* input = reinterpret_cast<const T*>(Inputs_[0]->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
+    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
+    auto* output = reinterpret_cast<float*>(GetOutput());
 
     for (int64_t index = 0; index < Inputs_[0]->GetElementCount(); ++index) {
         output[index] = input[index] / (1 + exp(-input[index]));
     }
 }
 
-template <class T>
-void TSiLUNode::DoEvaluateGpu(const TEvaluationContext& context)
+void TSiLUNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    auto* input = reinterpret_cast<const T*>(Inputs_[0]->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
+    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
+    auto* output = reinterpret_cast<float*>(GetOutput());
 
     SiLU(context.Stream, input, output, Inputs_[0]->GetElementCount());
 }
@@ -710,6 +570,9 @@ TRmsNormNode::TRmsNormNode(TNodeBasePtr input, TNodeBasePtr weights)
     if (input->GetValueType() != weights->GetValueType()) {
         THROW("Different value types", VAR(input->GetValueType()), VAR(weights->GetValueType()));
     }
+    if (input->GetValueType() != EValueType::Float32) {
+        THROW("Unsupported value type", VAR(input->GetValueType()));
+    }
     if (input->GetDimensions() != 1) {
         THROW("RMS normalization is supported for vectors only", VAR(input->GetDimensions()));
     }
@@ -720,40 +583,11 @@ TRmsNormNode::TRmsNormNode(TNodeBasePtr input, TNodeBasePtr weights)
 
 void TRmsNormNode::EvaluateCpu()
 {
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateCpu<float>();
-        return;
-    case EValueType::Float64:
-        DoEvaluateCpu<double>();
-        return;
-    default:
-        THROW("CPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
+    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
+    auto* weights = reinterpret_cast<const float*>(Inputs_[1]->GetOutput());
+    auto* output = reinterpret_cast<float*>(GetOutput());
 
-void TRmsNormNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateGpu<float>(context);
-        return;
-    case EValueType::Float64:
-        DoEvaluateGpu<double>(context);
-        return;
-    default:
-        THROW("GPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
-template <class T>
-void TRmsNormNode::DoEvaluateCpu()
-{
-    auto* input = reinterpret_cast<const T*>(Inputs_[0]->GetOutput());
-    auto* weights = reinterpret_cast<const T*>(Inputs_[1]->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
-
-    T sum = 0.0;
+    float sum = 0.0;
     for (int64_t index = 0; index < Inputs_[0]->GetElementCount(); ++index) {
         sum += input[index] * input[index];
     }
@@ -766,12 +600,11 @@ void TRmsNormNode::DoEvaluateCpu()
     }
 }
 
-template <class T>
-void TRmsNormNode::DoEvaluateGpu(const TEvaluationContext& context)
+void TRmsNormNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    auto* input = reinterpret_cast<const T*>(Inputs_[0]->GetOutput());
-    auto* weights = reinterpret_cast<const T*>(Inputs_[1]->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
+    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
+    auto* weights = reinterpret_cast<const float*>(Inputs_[1]->GetOutput());
+    auto* output = reinterpret_cast<float*>(GetOutput());
 
     RMSNorm(
         context.Stream,
@@ -779,7 +612,7 @@ void TRmsNormNode::DoEvaluateGpu(const TEvaluationContext& context)
         weights,
         output,
         Inputs_[0]->GetElementCount(),
-        /*epsilon*/ T(1e-5));
+        /*epsilon*/ 1e-5);
 }
 
 TReshapeNode::TReshapeNode(TNodeBasePtr input, std::vector<int64_t> shape)
@@ -853,39 +686,12 @@ void TComplexHadamardProductNode::Initialize(IDevice* device)
 
 void TComplexHadamardProductNode::EvaluateCpu()
 {
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateCpu<float>();
-        return;
-    case EValueType::Float64:
-        DoEvaluateCpu<double>();
-        return;
-    default:
-        THROW("CPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
-void TComplexHadamardProductNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateGpu<float>(context);
-        return;
-    case EValueType::Float64:
-        DoEvaluateGpu<double>(context);
-        return;
-    }
-}
-
-template <typename T>
-void TComplexHadamardProductNode::DoEvaluateCpu()
-{
     const auto& lhs = Inputs_[0];
     const auto& rhs = Inputs_[1];
 
-    auto* lhsPtr = reinterpret_cast<const T*>(lhs->GetOutput());
-    auto* rhsPtr = reinterpret_cast<const T*>(rhs->GetOutput());
-    auto* outputPtr = reinterpret_cast<T*>(GetOutput());
+    auto* lhsPtr = reinterpret_cast<const float*>(lhs->GetOutput());
+    auto* rhsPtr = reinterpret_cast<const float*>(rhs->GetOutput());
+    auto* outputPtr = reinterpret_cast<float*>(GetOutput());
 
     for (int64_t index = 0; index < lhs->GetElementCount() / 2; ++index) {
         std::vector<int64_t> rhsIndices(rhs->GetDimensions() - 1);
@@ -909,14 +715,13 @@ void TComplexHadamardProductNode::DoEvaluateCpu()
     }
 }
 
-template <typename T>
-void TComplexHadamardProductNode::DoEvaluateGpu(const TEvaluationContext& context)
+void TComplexHadamardProductNode::EvaluateGpu(const TEvaluationContext& context)
 {
     ComplexHadamardProductBroadcast(
         context.Stream,
-        reinterpret_cast<const T*>(Inputs_[0]->GetOutput()),
-        reinterpret_cast<const T*>(Inputs_[1]->GetOutput()),
-        reinterpret_cast<T*>(GetOutput()),
+        reinterpret_cast<const float*>(Inputs_[0]->GetOutput()),
+        reinterpret_cast<const float*>(Inputs_[1]->GetOutput()),
+        reinterpret_cast<float*>(GetOutput()),
         LhsShape_,
         RhsShape_,
         GetDimensions(),
@@ -927,6 +732,10 @@ TTensorMeta TComplexHadamardProductNode::CalculateMeta(const TTensorMeta& lhs, c
 {
     if (lhs.ValueType != rhs.ValueType) {
         THROW("Different value types", VAR(lhs.ValueType), VAR(rhs.ValueType));
+    }
+
+    if (lhs.ValueType != EValueType::Float32) {
+        THROW("Unsupported value type", VAR(lhs.ValueType));
     }
 
     if (lhs.Shape.size() != rhs.Shape.size()) {
@@ -969,41 +778,12 @@ void THadamardProductNode::Initialize(IDevice* device)
 
 void THadamardProductNode::EvaluateCpu()
 {
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateCpu<float>();
-        return;
-    case EValueType::Float64:
-        DoEvaluateCpu<double>();
-        return;
-    default:
-        THROW("CPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
-void THadamardProductNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateGpu<float>(context);
-        return;
-    case EValueType::Float64:
-        DoEvaluateGpu<double>(context);
-        return;
-    default:
-        THROW("GPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
-template <typename T>
-void THadamardProductNode::DoEvaluateCpu()
-{
     const auto& lhs = Inputs_[0];
     const auto& rhs = Inputs_[1];
 
-    auto* lhsPtr = reinterpret_cast<const T*>(lhs->GetOutput());
-    auto* rhsPtr = reinterpret_cast<const T*>(rhs->GetOutput());
-    auto* outputPtr = reinterpret_cast<T*>(GetOutput());
+    auto* lhsPtr = reinterpret_cast<const float*>(lhs->GetOutput());
+    auto* rhsPtr = reinterpret_cast<const float*>(rhs->GetOutput());
+    auto* outputPtr = reinterpret_cast<float*>(GetOutput());
 
     for (int64_t index = 0; index < lhs->GetElementCount(); ++index) {
         std::vector<int64_t> rhsIndices(rhs->GetDimensions());
@@ -1027,14 +807,13 @@ void THadamardProductNode::DoEvaluateCpu()
     }
 }
 
-template <typename T>
-void THadamardProductNode::DoEvaluateGpu(const TEvaluationContext& context)
+void THadamardProductNode::EvaluateGpu(const TEvaluationContext& context)
 {
     HadamardProductBroadcast(
         context.Stream,
-        reinterpret_cast<const T*>(Inputs_[0]->GetOutput()),
-        reinterpret_cast<const T*>(Inputs_[1]->GetOutput()),
-        reinterpret_cast<T*>(GetOutput()),
+        reinterpret_cast<const float*>(Inputs_[0]->GetOutput()),
+        reinterpret_cast<const float*>(Inputs_[1]->GetOutput()),
+        reinterpret_cast<float*>(GetOutput()),
         LhsShape_,
         RhsShape_,
         GetDimensions(),
@@ -1112,21 +891,8 @@ void TPermuteNode::Initialize(IDevice* device)
 
 void TPermuteNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateGpu<float>(context);
-        return;
-    case EValueType::Float64:
-        DoEvaluateGpu<double>(context);
-        return;
-    }
-}
-
-template <class T>
-void TPermuteNode::DoEvaluateGpu(const TEvaluationContext& context)
-{
-    auto* input = reinterpret_cast<const T*>(Inputs_[0]->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
+    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
+    auto* output = reinterpret_cast<float*>(GetOutput());
 
     Permute(
         context.Stream,
@@ -1143,6 +909,10 @@ TTensorMeta TPermuteNode::CalculateMeta(const TTensorMeta& input, const std::vec
 {
     if (input.GetDimensions() != permutation.size()) {
         THROW("Invalid permutation size", VAR(input.GetDimensions()), VAR(permutation.size()));
+    }
+
+    if (input.ValueType != EValueType::Float32) {
+        THROW("Unsupported value type", VAR(input.ValueType));
     }
 
     int64_t outputSize = 1;
@@ -1177,6 +947,9 @@ TReplaceSliceNode::TReplaceSliceNode(TNodeBasePtr input, TNodeBasePtr replacemen
 {
     if (input->GetValueType() != replacement->GetValueType()) {
         THROW("Different value types", VAR(input->GetValueType()), VAR(replacement->GetValueType()));
+    }
+    if (input->GetValueType() != EValueType::Float32) {
+        THROW("Unsupported value type", VAR(input->GetValueType()));
     }
     if (input->GetDimensions() != replacement->GetDimensions()) {
         THROW("Different number of dimensions", VAR(input->GetDimensions()), VAR(replacement->GetDimensions()));
@@ -1233,23 +1006,8 @@ void TReplaceSliceNode::EvaluateCpu()
 
 void TReplaceSliceNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateGpu<float>(context);
-        return;
-    case EValueType::Float64:
-        DoEvaluateGpu<double>(context);
-        return;
-    default:
-        THROW("GPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
-template <class T>
-void TReplaceSliceNode::DoEvaluateGpu(const TEvaluationContext& context)
-{
-    auto* input = reinterpret_cast<T*>(Inputs_[0]->GetOutput());
-    auto* replacement = reinterpret_cast<const T*>(Inputs_[1]->GetOutput());
+    auto* input = reinterpret_cast<float*>(Inputs_[0]->GetOutput());
+    auto* replacement = reinterpret_cast<const float*>(Inputs_[1]->GetOutput());
     auto* begin = reinterpret_cast<const int64_t*>(Inputs_[2]->GetOutput());
     auto* end = reinterpret_cast<const int64_t*>(Inputs_[3]->GetOutput());
 
@@ -1279,38 +1037,9 @@ TSlicedSoftmaxNode::TSlicedSoftmaxNode(TNodeBasePtr input, TNodeBasePtr prefixSi
 
 void TSlicedSoftmaxNode::EvaluateCpu()
 {
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateCpu<float>();
-        return;
-    case EValueType::Float64:
-        DoEvaluateCpu<double>();
-        return;
-    default:
-        THROW("CPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
-void TSlicedSoftmaxNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    switch (GetValueType()) {
-    case EValueType::Float32:
-        DoEvaluateGpu<float>(context);
-        return;
-    case EValueType::Float64:
-        DoEvaluateGpu<double>(context);
-        return;
-    default:
-        THROW("GPU inference does not support this value type", VAR(GetValueType()));
-    }
-}
-
-template <class T>
-void TSlicedSoftmaxNode::DoEvaluateCpu()
-{
-    auto* input = reinterpret_cast<const T*>(Inputs_[0]->GetOutput());
+    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
     auto prefixSize = *reinterpret_cast<const int64_t*>(Inputs_[1]->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
+    auto* output = reinterpret_cast<float*>(GetOutput());
 
     if (prefixSize == 0) {
         memcpy(output, input, GetElementCount() * GetElementSize());
@@ -1323,12 +1052,12 @@ void TSlicedSoftmaxNode::DoEvaluateCpu()
 
     int64_t vectorSize = GetShape().back();
     for (int64_t startIndex = 0; startIndex < GetElementCount(); startIndex += vectorSize) {
-        T max = input[startIndex];
+        float max = input[startIndex];
         for (int64_t index = 1; index < prefixSize; ++index) {
             max = std::max(max, input[startIndex + index]);
         }
 
-        T expSum = 0.0;
+        float expSum = 0.0;
         for (int64_t index = 0; index < prefixSize; ++index) {
             expSum += exp(input[startIndex + index] - max);
         }
@@ -1343,12 +1072,11 @@ void TSlicedSoftmaxNode::DoEvaluateCpu()
     }
 }
 
-template <class T>
-void TSlicedSoftmaxNode::DoEvaluateGpu(const TEvaluationContext& context)
+void TSlicedSoftmaxNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    auto* input = reinterpret_cast<const T*>(Inputs_[0]->GetOutput());
+    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
     auto* prefixSizePtr = reinterpret_cast<int64_t*>(Inputs_[1]->GetOutput());
-    auto* output = reinterpret_cast<T*>(GetOutput());
+    auto* output = reinterpret_cast<float*>(GetOutput());
 
     SlicedSoftmax(
         context.Stream,

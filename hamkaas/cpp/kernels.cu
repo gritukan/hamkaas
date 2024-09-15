@@ -11,15 +11,10 @@ namespace NHamKaas {
 constexpr int64_t MaxThreadsPerBlock = 256;
 constexpr int64_t MaxBlockCount = 65535;
 
-#define FOR_ALL_FLOAT_TYPES(XX) \
-    XX(float) \
-    XX(double) \
-
-template <class T>
 __global__ void SumTensorsBroadcastKernel(
-    const T* lhs,
-    const T* rhs,
-    T* output,
+    const float* lhs,
+    const float* rhs,
+    float* output,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
@@ -46,12 +41,11 @@ __global__ void SumTensorsBroadcastKernel(
     }
 }
 
-template <class T>
 void SumTensorsBroadcast(
     cudaStream_t stream,
-    const T* lhs,
-    const T* rhs,
-    T* output,
+    const float* lhs,
+    const float* rhs,
+    float* output,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
@@ -61,7 +55,7 @@ void SumTensorsBroadcast(
     int64_t blocks = (outputSize + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    SumTensorsBroadcastKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
+    SumTensorsBroadcastKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(
         lhs,
         rhs,
         output,
@@ -71,23 +65,9 @@ void SumTensorsBroadcast(
         outputSize);
 }
 
-#define INSTANTIATE(T) \
-    template void SumTensorsBroadcast( \
-        cudaStream_t stream, \
-        const T* lhs, \
-        const T* rhs, \
-        T* output, \
-        int64_t* lhsShape, \
-        int64_t* rhsShape, \
-        int64_t dimensions, \
-        int64_t outputSize);
-FOR_ALL_FLOAT_TYPES(INSTANTIATE)
-#undef INSTANTIATE
-
-template <class T>
 __global__ void ReLUKernel(
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t size)
 {
     int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
@@ -96,33 +76,22 @@ __global__ void ReLUKernel(
     }
 }
 
-template <class T>
 void ReLU(
     cudaStream_t stream,
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t size)
 {
     constexpr int64_t ThreadsPerBlock = 256;
     int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    ReLUKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(input, output, size);
+    ReLUKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(input, output, size);
 }
 
-#define INSTANTIATE(T) \
-    template void ReLU( \
-        cudaStream_t stream, \
-        const T* input, \
-        T* output, \
-        int64_t size);
-FOR_ALL_FLOAT_TYPES(INSTANTIATE)
-#undef INSTANTIATE
-
-template <class T>
 __global__ void SiLUKernel(
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t size)
 {
     int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
@@ -131,43 +100,32 @@ __global__ void SiLUKernel(
     }
 }
 
-template <class T>
 void SiLU(
     cudaStream_t stream,
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t size)
 {
     constexpr int64_t ThreadsPerBlock = 256;
     int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    SiLUKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(input, output, size);
+    SiLUKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(input, output, size);
 }
 
-#define INSTANTIATE(T) \
-    template void SiLU( \
-        cudaStream_t stream, \
-        const T* input, \
-        T* output, \
-        int64_t size);
-FOR_ALL_FLOAT_TYPES(INSTANTIATE)
-#undef INSTANTIATE
-
-template <class T>
 __global__ void RMSNormKernel(
-    const T* input,
-    const T* weights,
-    T* output,
+    const float* input,
+    const float* weights,
+    float* output,
     int64_t size,
-    T epsilon)
+    float epsilon)
 {
     assert(blockIdx.x == 0);
 
-    __shared__ T blockSum[MaxThreadsPerBlock];
-    __shared__ T sharedNorm;
+    __shared__ float blockSum[MaxThreadsPerBlock];
+    __shared__ float sharedNorm;
 
-    T localSum = 0;
+    float localSum = 0;
     for (int64_t i = threadIdx.x; i < size; i += blockDim.x) {
         localSum += input[i] * input[i];
     }
@@ -176,7 +134,7 @@ __global__ void RMSNormKernel(
     __syncthreads();
 
     if (threadIdx.x == 0) {
-        T norm = 0;
+        float norm = 0;
         for (int64_t i = 0; i < blockDim.x; ++i) {
             norm += blockSum[i];
         }
@@ -188,42 +146,29 @@ __global__ void RMSNormKernel(
 
     __syncthreads();
 
-    T norm = sharedNorm;
+    float norm = sharedNorm;
 
     for (int64_t i = threadIdx.x; i < size; i += blockDim.x) {
         output[i] = weights[i] * (input[i] * norm);
     }
 }
 
-template <class T>
 void RMSNorm(
     cudaStream_t stream,
-    const T* input,
-    const T* weights,
-    T* output,
+    const float* input,
+    const float* weights,
+    float* output,
     int64_t size,
-    T epsilon)
+    float epsilon)
 {
     constexpr int64_t ThreadsPerBlock = 256;
-    RMSNormKernel<T><<<1, ThreadsPerBlock, 0, stream>>>(input, weights, output, size, epsilon);
+    RMSNormKernel<<<1, ThreadsPerBlock, 0, stream>>>(input, weights, output, size, epsilon);
 }
 
-#define INSTANTIATE(T) \
-    template void RMSNorm( \
-        cudaStream_t stream, \
-        const T* input, \
-        const T* weights, \
-        T* output, \
-        int64_t size, \
-        T epsilon);
-FOR_ALL_FLOAT_TYPES(INSTANTIATE)
-#undef INSTANTIATE
-
-template <class T>
 __global__ void ComplexHadamardProductBroadcastKernel(
-    const T* lhs,
-    const T* rhs,
-    T* output,
+    const float* lhs,
+    const float* rhs,
+    float* output,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
@@ -251,12 +196,11 @@ __global__ void ComplexHadamardProductBroadcastKernel(
     }
 }
 
-template <class T>
 void ComplexHadamardProductBroadcast(
     cudaStream_t stream,
-    const T* lhs,
-    const T* rhs,
-    T* output,
+    const float* lhs,
+    const float* rhs,
+    float* output,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
@@ -266,7 +210,7 @@ void ComplexHadamardProductBroadcast(
     int64_t blocks = (outputSize / 2 + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    ComplexHadamardProductBroadcastKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
+    ComplexHadamardProductBroadcastKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(
         lhs,
         rhs,
         output,
@@ -276,24 +220,10 @@ void ComplexHadamardProductBroadcast(
         outputSize);
 }
 
-#define INSTANTIATE(T) \
-    template void ComplexHadamardProductBroadcast( \
-        cudaStream_t stream, \
-        const T* lhs, \
-        const T* rhs, \
-        T* output, \
-        int64_t* lhsShape, \
-        int64_t* rhsShape, \
-        int64_t dimensions, \
-        int64_t outputSize);
-FOR_ALL_FLOAT_TYPES(INSTANTIATE)
-#undef INSTANTIATE
-
-template <class T>
 __global__ void HadamardProductBroadcastKernel(
-    const T* lhs,
-    const T* rhs,
-    T* output,
+    const float* lhs,
+    const float* rhs,
+    float* output,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
@@ -320,12 +250,11 @@ __global__ void HadamardProductBroadcastKernel(
     }
 }
 
-template <class T>
 void HadamardProductBroadcast(
     cudaStream_t stream,
-    const T* lhs,
-    const T* rhs,
-    T* output,
+    const float* lhs,
+    const float* rhs,
+    float* output,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
@@ -335,7 +264,7 @@ void HadamardProductBroadcast(
     int64_t blocks = (outputSize + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    HadamardProductBroadcastKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
+    HadamardProductBroadcastKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(
         lhs,
         rhs,
         output,
@@ -345,37 +274,23 @@ void HadamardProductBroadcast(
         outputSize);
 }
 
-#define INSTANTIATE(T) \
-    template void HadamardProductBroadcast( \
-        cudaStream_t stream, \
-        const T* lhs, \
-        const T* rhs, \
-        T* output, \
-        int64_t* lhsShape, \
-        int64_t* rhsShape, \
-        int64_t dimensions, \
-        int64_t outputSize);
-FOR_ALL_FLOAT_TYPES(INSTANTIATE)
-#undef INSTANTIATE
-
-template <class T>
 __global__ void SoftmaxKernel(
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t* prefixSizePtr,
     int64_t size,
     int64_t vectorSize)
 {
-    __shared__ T buffer[MaxThreadsPerBlock];
+    __shared__ float buffer[MaxThreadsPerBlock];
 
     int64_t prefixSize = *prefixSizePtr;
 
     for (int64_t vectorIndex = blockIdx.x; vectorIndex < size / vectorSize; vectorIndex += gridDim.x) {
-        const T* in = input + vectorIndex * vectorSize;
-        T* out = output + vectorIndex * vectorSize;
+        const float* in = input + vectorIndex * vectorSize;
+        float* out = output + vectorIndex * vectorSize;
 
         if (threadIdx.x < prefixSize) {
-            T max = in[threadIdx.x];
+            float max = in[threadIdx.x];
             for (int64_t index = threadIdx.x; index < prefixSize; index += blockDim.x) {
                 max = max > in[index] ? max : in[index];
             }
@@ -386,7 +301,7 @@ __global__ void SoftmaxKernel(
         __syncthreads();
 
         if (threadIdx.x == 0) {
-            T max = buffer[0];
+            float max = buffer[0];
             for (int64_t i = 1; i < prefixSize && i < blockDim.x; ++i) {
                 max = max > buffer[i] ? max : buffer[i];
             }
@@ -396,8 +311,8 @@ __global__ void SoftmaxKernel(
 
         __syncthreads();
 
-        T max = buffer[0];
-        T sum = 0;
+        float max = buffer[0];
+        float sum = 0;
         for (int64_t index = threadIdx.x; index < prefixSize; index += blockDim.x) {
             sum += exp(in[index] - max);
         }
@@ -407,7 +322,7 @@ __global__ void SoftmaxKernel(
         __syncthreads();
 
         if (threadIdx.x == 0) {
-            T sum = 0;
+            float sum = 0;
             for (int64_t i = 0; i < prefixSize && i < blockDim.x; ++i) {
                 sum += buffer[i];
             }
@@ -431,11 +346,10 @@ __global__ void SoftmaxKernel(
     }
 }
 
-template <class T>
 void SlicedSoftmax(
     cudaStream_t stream,
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t* prefixSizePtr,
     int64_t size,
     int64_t vectorSize)
@@ -443,7 +357,7 @@ void SlicedSoftmax(
     constexpr int64_t ThreadsPerBlock = 256;
 
     int64_t blocks = std::min(MaxBlockCount, size / vectorSize);
-    SoftmaxKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
+    SoftmaxKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(
         input,
         output,
         prefixSizePtr,
@@ -451,22 +365,10 @@ void SlicedSoftmax(
         vectorSize);
 }
 
-#define INSTANTIATE(T) \
-    template void SlicedSoftmax( \
-        cudaStream_t stream, \
-        const T* input, \
-        T* output, \
-        int64_t* prefixSizePtr, \
-        int64_t size, \
-        int64_t vectorSize);
-FOR_ALL_FLOAT_TYPES(INSTANTIATE)
-#undef INSTANTIATE
-
-template <class T>
 __global__ void ReplaceKernel(
-    T* input,
+    float* input,
     int64_t inputSize,
-    const T* replacement,
+    const float* replacement,
     int64_t replacementSize,
     const int64_t* begin,
     const int64_t* end)
@@ -477,12 +379,11 @@ __global__ void ReplaceKernel(
     }
 }
 
-template <class T>
 void ReplaceSlice(
     cudaStream_t stream,
-    T* input,
+    float* input,
     int64_t inputSize,
-    const T* replacement,
+    const float* replacement,
     int64_t replacementSize,
     const int64_t* begin,
     const int64_t* end)
@@ -491,7 +392,7 @@ void ReplaceSlice(
     int64_t blocks = (replacementSize + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    ReplaceKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
+    ReplaceKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(
         input,
         inputSize,
         replacement,
@@ -500,22 +401,9 @@ void ReplaceSlice(
         end);
 }
 
-#define INSTANTIATE(T) \
-    template void ReplaceSlice( \
-        cudaStream_t stream, \
-        T* input, \
-        int64_t inputSize, \
-        const T* replacement, \
-        int64_t replacementSize, \
-        const int64_t* begin, \
-        const int64_t* end);
-FOR_ALL_FLOAT_TYPES(INSTANTIATE)
-#undef INSTANTIATE
-
-template <class T>
 __global__ void PermuteKernel(
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t* inputShape,
     int64_t* outputShape,
     int64_t* permutation,
@@ -542,11 +430,10 @@ __global__ void PermuteKernel(
     }
 }
 
-template <class T>
 void Permute(
     cudaStream_t stream,
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t* inputShape,
     int64_t* outputShape,
     int64_t* permutation,
@@ -557,7 +444,7 @@ void Permute(
     int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    PermuteKernel<T><<<blocks, ThreadsPerBlock, 0, stream>>>(
+    PermuteKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(
         input,
         output,
         inputShape,
@@ -566,18 +453,5 @@ void Permute(
         dimensions,
         size);
 }
-
-#define INSTANTIATE(T) \
-    template void Permute( \
-        cudaStream_t stream, \
-        const T* input, \
-        T* output, \
-        int64_t* inputShape, \
-        int64_t* outputShape, \
-        int64_t* permutation, \
-        int64_t dimensions, \
-        int64_t size);
-FOR_ALL_FLOAT_TYPES(INSTANTIATE)
-#undef INSTANTIATE
 
 } // namespace NHamKaas

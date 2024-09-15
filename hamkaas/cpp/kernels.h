@@ -5,86 +5,77 @@
 
 namespace NHamKaas {
 
-template <class T>
 void SumTensorsBroadcast(
     cudaStream_t stream,
-    const T* lhs,
-    const T* rhs,
-    T* output,
+    const float* lhs,
+    const float* rhs,
+    float* output,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
     int64_t outputSize);
 
-template <class T>
 void ReLU(
     cudaStream_t stream,
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t size);
 
-template <class T>
 void SiLU(
     cudaStream_t stream,
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t size);
 
-template <class T>
 void RMSNorm(
     cudaStream_t stream,
-    const T* input,
-    const T* weights,
-    T* output,
+    const float* input,
+    const float* weights,
+    float* output,
     int64_t size,
-    T epsilon);
+    float epsilon);
 
-template <class T>
 void ComplexHadamardProductBroadcast(
     cudaStream_t stream,
-    const T* lhs,
-    const T* rhs,
-    T* output,
+    const float* lhs,
+    const float* rhs,
+    float* output,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
     int64_t outputSize);
 
-template <class T>
 void HadamardProductBroadcast(
     cudaStream_t stream,
-    const T* lhs,
-    const T* rhs,
-    T* output,
+    const float* lhs,
+    const float* rhs,
+    float* output,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
     int64_t outputSize);
 
-template <class T>
 void SlicedSoftmax(
     cudaStream_t stream,
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t* prefixSizePtr,
     int64_t size,
     int64_t vectorSize);
 
-template <class T>
 void ReplaceSlice(
     cudaStream_t stream,
-    T* input,
+    float* input,
     int64_t inputSize,
-    const T* replacement,
+    const float* replacement,
     int64_t replacementSize,
     const int64_t* begin,
     const int64_t* end);
 
-template <class T>
 void Permute(
     cudaStream_t stream,
-    const T* input,
-    T* output,
+    const float* input,
+    float* output,
     int64_t* inputShape,
     int64_t* outputShape,
     int64_t* permutation,

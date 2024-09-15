@@ -15,7 +15,7 @@ class TestCompilerCpu:
     def compile(self, node):
         return self.plugin.compile_model(node, use_gpu=self.USE_GPU)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.int64])
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.int64])
     def test_constant_node(self, dtype):
         def do_test(tensor):
             node = hamkaas.ConstantTensor(tensor)
@@ -43,7 +43,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test(torch.tensor([], dtype=dtype))
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.int64])
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.int64])
     def test_input_node(self, dtype):
         def do_test(tensor):
             node = hamkaas.InputTensor("input", tensor.dtype, list(tensor.shape))
@@ -114,7 +114,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             self.compile(sum)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64, torch.int64])
+    @pytest.mark.parametrize("dtype", [torch.float32, torch.int64])
     def test_buffer_tensor(self, dtype):
         def do_test(shape, dtype):
             node = hamkaas.BufferTensor(dtype, shape)
@@ -152,7 +152,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([1, -2, 3], dtype)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_sum(self, dtype):
         def do_test(lhs_shape, rhs_shape, lhs_dtype, rhs_dtype=None):
             if rhs_dtype is None:
@@ -206,7 +206,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([3, 2], [2, 3], dtype)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_matmul(self, dtype):
         def do_test(lhs_shape, rhs_shape, lhs_dtype, rhs_dtype=None):
             if rhs_dtype is None:
@@ -268,7 +268,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([2], [2, 2, 2], dtype)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_relu(self, dtype):
         def do_test(shape, dtype):
             input = hamkaas.InputTensor("input", dtype, shape)
@@ -287,7 +287,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([5], torch.int64)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_silu(self, dtype):
         def do_test(shape, dtype):
             input = hamkaas.InputTensor("input", dtype, shape)
@@ -307,7 +307,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([5], torch.int64)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_slice_node(self, dtype):
         def do_test(shape, dtype, start, end):
             input = hamkaas.InputTensor("input", dtype, shape)
@@ -339,7 +339,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([5], torch.int64, 1, 3)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_rms_norm(self, dtype):
         def do_test(lhs_shape, rhs_shape, lhs_dtype, rhs_dtype=None):
             if rhs_dtype is None:
@@ -384,7 +384,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([5], [5], torch.int64)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_reshape(self, dtype):
         def do_test(shape, dtype, new_shape):
             input = hamkaas.InputTensor("input", dtype, shape)
@@ -416,7 +416,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([5], torch.int64, [5])
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_complex_hadamard_product(self, dtype):
         def do_test(lhs_shape, rhs_shape, lhs_dtype, rhs_dtype=None):
             if rhs_dtype is None:
@@ -468,7 +468,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([5, 2], [5, 2], torch.int64)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_hadamard_product(self, dtype):
         def do_test(lhs_shape, rhs_shape, lhs_dtype, rhs_dtype=None):
             if rhs_dtype is None:
@@ -517,7 +517,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([5], [5], torch.int64)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_permute(self, dtype):
         def do_test(shape, dtype, permutation):
             input = hamkaas.InputTensor("input", dtype, shape)
@@ -549,7 +549,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([5], torch.int64, [0])
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_replace_node(self, dtype):
         def do_test(shape, dtype, replacement_shape, replacement_dtype, start, end):
             input = hamkaas.InputTensor("input", dtype, shape)
@@ -587,7 +587,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([5], dtype, [2], dtype, 4, 3)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_buffer_node_persistence(self, dtype):
         buffer = hamkaas.BufferTensor(dtype, [5])
         replacement = hamkaas.InputTensor("replacement", dtype, [1])
@@ -605,7 +605,7 @@ class TestCompilerCpu:
             })
             assert result[:i].allclose(torch.tensor(list(range(i)), dtype=dtype))
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     def test_sliced_softmax(self, dtype):
         def do_test(shape, dtype, size):
             input = hamkaas.InputTensor("input", dtype, shape)
@@ -632,7 +632,7 @@ class TestCompilerCpu:
         with pytest.raises(Exception):
             do_test([5], torch.int64, 3)
 
-    @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+    @pytest.mark.parametrize("dtype", [torch.float32])
     @pytest.mark.parametrize("index", [1, 2, 5, 10, 20, 40, 60, 100])
     def test_fibonacci(self, dtype, index):
         x = hamkaas.ConstantTensor(torch.tensor([1], dtype=dtype))

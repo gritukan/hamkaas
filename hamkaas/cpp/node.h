@@ -141,12 +141,6 @@ private:
     int64_t* RhsShape_;
 
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
-
-    template <class T>
-    void DoEvaluateCpu();
-
-    template <class T>
-    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TMulNode
@@ -172,12 +166,6 @@ private:
 
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
 
-    template <class T>
-    void DoEvaluateCpu();
-
-    template <class T>
-    void DoEvaluateGpu(const TEvaluationContext& context);
-
     struct TParameters
     {
         int64_t B;
@@ -196,13 +184,6 @@ public:
 
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
-
-private:
-    template <class T>
-    void DoEvaluateCpu();
-
-    template <class T>
-    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TSiLUNode
@@ -213,13 +194,6 @@ public:
 
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
-
-private:
-    template <class T>
-    void DoEvaluateCpu();
-
-    template <typename T>
-    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TSliceNode
@@ -256,13 +230,6 @@ public:
 
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
-
-private:
-    template <class T>
-    void DoEvaluateCpu();
-
-    template <class T>
-    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TReshapeNode
@@ -304,12 +271,6 @@ private:
     int64_t* RhsShape_;
 
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
-
-    template <class T>
-    void DoEvaluateCpu();
-
-    template <class T>
-    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class THadamardProductNode
@@ -331,12 +292,6 @@ private:
     int64_t* RhsShape_;
 
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
-
-    template <class T>
-    void DoEvaluateCpu();
-
-    template <class T>
-    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TPermuteNode
@@ -362,9 +317,6 @@ private:
 
     bool Initialized_ = false;
 
-    template <class T>
-    void DoEvaluateGpu(const TEvaluationContext& context);
-
     static TTensorMeta CalculateMeta(const TTensorMeta& input, const std::vector<int64_t>& permutation);
 };
 
@@ -385,10 +337,6 @@ public:
 
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
-
-private:
-    template <class T>
-    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TSlicedSoftmaxNode
@@ -399,13 +347,6 @@ public:
 
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
-
-private:
-    template <class T>
-    void DoEvaluateCpu();
-
-    template <class T>
-    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 } // namespace NHamKaas
