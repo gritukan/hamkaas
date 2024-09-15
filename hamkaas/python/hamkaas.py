@@ -24,7 +24,11 @@ _MAX_TENSOR_DIMS = 2
 
 class HamKaasNode(ABC):
     def __init__(self):
+        self.debug = False
         pass
+
+    def set_debug(self):
+        self.debug = True
 
     @abstractmethod
     def get_type(self) -> torch.dtype:
@@ -39,6 +43,15 @@ class HamKaasNode(ABC):
             return cache[id(self)]
 
         result = self.do_eval_slow(inputs, buffers, cache)
+        if self.debug:
+            tot = 1
+            for i in range(len(result.shape)):
+                tot *= result.shape[i]
+            l = result.reshape([tot])
+            l = [x.item() for x in result]
+
+            print("new ", l[:3], l[len(l)//2:len(l)//2+3], l[-3:])
+
         cache[id(self)] = result
 
         return result
@@ -166,11 +179,17 @@ class MulNode(HamKaasNode):
         lhs_shape = lhs.get_shape()
         if len(lhs_shape) == 1:
             lhs_shape = [1, lhs_shape[0]]
-        if len(lhs_shape) != 2 or len(rhs.get_shape()) != 2:
+        elif len(lhs_shape) == 3:
+            if len(rhs.get_shape()) != 3:
+                raise ValueError("Incompatible shapes for multiplication {lhs.get_shape()} vs {rhs.get_shape()}")
+            if lhs_shape[2] != rhs.get_shape()[1]:
+                raise ValueError("Incompatible shapes for multiplication {lhs.get_shape()} vs {rhs.get_shape()}")
+        elif len(lhs_shape) != 2 or len(rhs.get_shape()) != 2:
             raise ValueError("Only matrices are supported for multiplication")
-        
-        if lhs_shape[1] != rhs.get_shape()[0]:
-            raise ValueError(f"Shapes do not match for multiplication: {lhs.get_shape()} vs {rhs.get_shape()}")
+        else:
+            assert len(lhs_shape) == 2 and len(rhs.get_shape()) == 2
+            if lhs_shape[1] != rhs.get_shape()[0]:
+                raise ValueError(f"Shapes do not match for multiplication: {lhs.get_shape()} vs {rhs.get_shape()}")
         
         self.lhs = lhs
         self.rhs = rhs
@@ -181,11 +200,13 @@ class MulNode(HamKaasNode):
     def get_shape(self) -> List[int]:
         if len(self.lhs.get_shape()) == 1:
             return [self.rhs.get_shape()[1]]
-        else:
+        elif len(self.lhs.get_shape()) == 2:
             return [self.lhs.get_shape()[0], self.rhs.get_shape()[1]]
+        elif len(self.lhs.get_shape()) == 3:
+            return [self.lhs.get_shape()[0], self.lhs.get_shape()[1], self.rhs.get_shape()[2]]
 
     def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return self.lhs.eval_slow(inputs, buffers, cache) @ self.rhs.eval_slow(inputs, buffers, cache)
+        return torch.matmul(self.lhs.eval_slow(inputs, buffers, cache), self.rhs.eval_slow(inputs, buffers, cache))
 
 
 class ReLUNode(HamKaasNode):
@@ -293,22 +314,15 @@ class ReshapeNode(HamKaasNode):
     def __init__(self, input: HamKaasNode, shape: List[int]):
         super().__init__()
 
-        # For now, reshape is supported in two cases: 1d -> kd and kd -> 1d.
-        if len(input.get_shape()) > 1 and len(shape) > 1:
-            raise ValueError("Only 1d -> kd and kd -> 1d reshapes are supported")
-        if len(input.get_shape()) == 1:
-            element_count = 1
-            for dim in shape:
-                element_count *= dim
-            if element_count != input.get_shape()[0]:
-                raise ValueError(f"Reshape element count mismatch: {input.get_shape()[0]} vs {element_count}")
-        else:
-            element_count = 1
-            for dim in input.get_shape():
-                element_count *= dim
-            if element_count != shape[0]:
-                raise ValueError(f"Reshape element count mismatch: {element_count} vs {shape[0]}")
-   
+        lhs_elements = 1
+        for i in range(len(input.get_shape())):
+            lhs_elements *= input.get_shape()[i]
+        result_elements = 1
+        for i in range(len(shape)):
+            result_elements *= shape[i]
+        if lhs_elements != result_elements:
+            raise ValueError(f"Reshape mismatch: {lhs_elements} vs {result_elements}")
+
         self.input = input
         self.shape = shape
 
@@ -464,6 +478,7 @@ class ReplaceNodeVariableSlice(HamKaasNode):
 
         start = self.start.eval_slow(inputs, buffers, cache).item()
         end = self.end.eval_slow(inputs, buffers, cache).item()
+        #print('NEW', start, end, id(x))
         x[start:end] = y
         return x
 
@@ -487,21 +502,22 @@ class SlicedSoftmaxNode(HamKaasNode):
         return self.input.get_shape()
     
     def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        x = self.input.eval_slow(inputs, buffers, cache)
+        x = self.input.eval_slow(inputs, buffers, cache).clone()
         size = self.prefix_size.eval_slow(inputs, buffers, cache).item()
+        xs = [x[i].item() for i in range(size)]
         # find max value (for numerical stability)
-        max_val = x[0]
+        max_val = xs[0]
         for i in range(1, size):
-            if x[i] > max_val:
-                max_val = x[i]
+            if xs[i] > max_val:
+                max_val = xs[i]
         # exp and sum
         exp_sum = 0.0
         for i in range(size):
-            x[i] = math.exp(x[i] - max_val)
-            exp_sum += x[i]
+            xs[i] = math.exp(xs[i] - max_val)
+            exp_sum += xs[i]
         # normalize
         for i in range(size):
-            x[i] /= exp_sum
+            x[i] = xs[i] / exp_sum
         return x
 
 @dataclass

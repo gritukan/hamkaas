@@ -124,7 +124,6 @@ def softmax(x, size):
         x[i] /= exp_sum
     return x
 
-
 def matmul(xout, x, w, n, d):
     # W (d,n) @ x (n,) -> xout (d,)
     # by far the most amount of time is spent inside this little function
@@ -149,7 +148,10 @@ class RunState:
     hb: List[float]
     hb2: List[float]
     logits: List[float]
+    debug: List[float]
 
+
+import copy
 
 # token, pos, config, state, weights
 def transformer(token: int, pos: int, conf: Config, state: RunState, weights: TransformerWeights) -> None:
@@ -202,9 +204,11 @@ def transformer(token: int, pos: int, conf: Config, state: RunState, weights: Tr
 
         # Save key,value at this time step (pos) to our kv cache
         loff = l * conf.seq_len * dim  # kv cache layer offset for convenience
+
         state.key_cache[loff + pos * dim: loff + (pos + 1) * dim] = state.k
         state.value_cache[loff + pos * dim: loff + (pos + 1) * dim] = state.v
 
+        #print('OLD', loff + pos * dim, loff + (pos + 1) * dim, id(state.key_cache))
         # Multihead attention. Iterate over all heads
         for h in range(conf.n_heads):
             # Get the query vector for this head
@@ -224,6 +228,7 @@ def transformer(token: int, pos: int, conf: Config, state: RunState, weights: Tr
 
                 # Save the score to the attention buffer
                 att[t] = score
+                state.debug = att
 
             # Softmax the scores to get attention weights, from 0..pos inclusively
             att = softmax(att, pos + 1)
@@ -283,12 +288,14 @@ def transformer(token: int, pos: int, conf: Config, state: RunState, weights: Tr
 
     # Classifier into logits
     state.logits = matmul(state.logits, x, weights.wcls, dim, conf.vocab_size)
+    state.debug = state.logits
 
 def build_model(conf: Config, weights: TransformerWeights):
     dim = conf.dim
     hidden_dim = conf.hidden_dim
     head_size = dim // conf.n_heads
 
+    #inv_sqrt_head_size = hamkaas.ConstantTensor(torch.tensor([[1.0 / math.sqrt(head_size)]], dtype=torch.float32), name="inv_sqrt_head_size")
     inv_sqrt_head_size = hamkaas.ConstantTensor(torch.tensor([1.0 / math.sqrt(head_size)], dtype=torch.float32), name="inv_sqrt_head_size")
     head_zeroes = hamkaas.ConstantTensor(torch.zeros(head_size, dtype=torch.float32), name="head_zeroes")
 
@@ -422,7 +429,6 @@ def build_model(conf: Config, weights: TransformerWeights):
         cache_end = cache_end_indices[l]
         key_cache = hamkaas.ReplaceNodeVariableSlice(key_cache, k, cache_start, cache_end)
         value_cache = hamkaas.ReplaceNodeVariableSlice(value_cache, v, cache_start, cache_end)
-
         # Multihead attention. Iterate over all heads
         for h in range(conf.n_heads):
             # Get the query vector for this head
@@ -436,6 +442,7 @@ def build_model(conf: Config, weights: TransformerWeights):
                 # Get the key vector for this head and at this timestemp
                 # XXX: What is going on here.
                 k = hamkaas.SliceNode(key_cache, loff + t * dim + h * head_size, loff + t * dim + (h + 1) * head_size)
+
                 # Calculate the attention score as the dot product of q and k
                 score = hamkaas.DotProductNode(q_head, k)
                 score = hamkaas.HadamardProductNode(score, inv_sqrt_head_size)
@@ -487,6 +494,7 @@ def build_model(conf: Config, weights: TransformerWeights):
 
     # Classifier into logits
     logits = hamkaas.MulNode(x, wcls)
+    #logits.set_debug()
     return logits
 
 
@@ -643,6 +651,12 @@ def run(args):
         "att_cache": torch.zeros(config.n_heads * config.seq_len, dtype=torch.float32),
     }
 
+    dbuffers = {
+        "key_cache": torch.zeros(config.n_layers * config.seq_len * config.dim, dtype=torch.float32),
+        "value_cache": torch.zeros(config.n_layers * config.seq_len * config.dim, dtype=torch.float32),
+        "att_cache": torch.zeros(config.n_heads * config.seq_len, dtype=torch.float32),
+    }
+
     while pos < steps:
         head_size = config.dim // config.n_heads
 
@@ -662,19 +676,10 @@ def run(args):
             inputs[f"cache_end_{l}"] = torch.tensor([loff + (pos + 1) * dim], dtype=torch.int64)
 
         logits = model.eval_slow(inputs, buffers, {})
-        # transformer(token, pos, config, state, weights)
+        #transformer(token, pos, config, state, weights)
 
-        # #print(logits)
-        # if pos == 0:
-        #     tot = 1
-        #     for i in range(len(logits.shape)):
-        #         tot *= logits.shape[i]
-        #     l = logits.reshape([tot])
-        #     l = [x.item() for x in logits]
-
-        #     print(l[:20], l[len(l) // 2 : len(l) // 2 + 20])
-        #     print(state.logits[:20], state.logits[len(state.logits) // 2 : len(state.logits) // 2 + 20])
-        #     sys.exit(0)
+        #K = 3
+        #print('old', state.debug[:K], state.debug[len(state.debug) // 2 : len(state.debug) // 2 + K], state.debug[-K:])
 
         # Forward the transformer to get logits for the next token
         if pos < len(prompt_tokens):
