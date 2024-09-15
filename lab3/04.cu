@@ -2,7 +2,19 @@
 
 #include "cudnn-frontend/include/cudnn_frontend.h"
 
+#define CUDNN_CHECK_ERROR(error) \
+    if (error != CUDNN_STATUS_SUCCESS) { \
+        throw std::runtime_error("CUDNN error: " + std::to_string(error)); \
+    }
+
 namespace fe = cudnn_frontend;
+
+void ThrowOnError(fe::error_t status)
+{
+    if (status.is_bad()) {
+        throw std::runtime_error(status.get_message());
+    }
+}
 
 constexpr int BatchSize = 128;
 
@@ -10,28 +22,7 @@ constexpr int BatchSize = 128;
 template <int N, int B>
 __global__ void ArgMaxKernel(const TFloatType* a, int* result)
 {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i >= B * N) {
-        return;
-    }
-
-    TFloatType max = a[i * N];
-    int maxIndex = 0;
-    for (int j = 1; j < N; j++) {
-        if (a[i * N + j] > max) {
-            max = a[i * N + j];
-            maxIndex = j;
-        }
-    }
-
-    result[i] = maxIndex;
-}
-
-void ThrowOnError(fe::error_t status)
-{
-    if (status.is_bad()) {
-        throw std::runtime_error(status.get_message());
-    }
+    // Your code here.
 }
 
 class TCudnnGraphBuilder
@@ -46,28 +37,15 @@ public:
         const std::string& name,
         int n)
     {
-        return Graph_->tensor(
-            fe::graph::Tensor_attributes()
-                .set_name(name)
-                .set_dim({1, 1, n})
-                .set_stride({n, n, 1})
-                .set_data_type(fe::DataType_t::FLOAT));
+        // Your code here.
     }
 
-    // NB: CuDNN does not support multiplication of tensors of dimenstion 2.
-    // Instead, it requires tensors of dimension 3, where the first dimension is for batching.
-    // We do not use batching in the MNIST network, so all the matrices are 3D tensors with the first dimension equal to 1.
-    std::shared_ptr<fe::graph::Tensor_attributes> AddMatrix(
+    std::shared_ptr<fe::graph::Tensor_attributes> AddRowMajorMatrix(
         const std::string& name,
         int n,
         int m)
     {
-        return Graph_->tensor(
-            fe::graph::Tensor_attributes()
-                .set_name(name)
-                .set_dim({1, n, m})
-                .set_stride({n * m, m, 1})
-                .set_data_type(fe::DataType_t::FLOAT));
+        // Your code here.
     }
 
     std::shared_ptr<fe::graph::Tensor_attributes> AddColumnMajorMatrix(
@@ -75,20 +53,22 @@ public:
         int n,
         int m)
     {
-        return Graph_->tensor(
-            fe::graph::Tensor_attributes()
-                .set_name(name)
-                .set_dim({1, n, m})
-                .set_stride({n * m, 1, n})
-                .set_data_type(fe::DataType_t::FLOAT));
+        // Your code here.
+    }
+
+    std::shared_ptr<fe::graph::Tensor_attributes> AddReLU(
+        const std::string& name,
+        std::shared_ptr<fe::graph::Tensor_attributes> input)
+    {
+        // Your code here.
     }
 
     template <size_t InputDimension, size_t OutputDimension>
     std::shared_ptr<fe::graph::Tensor_attributes> AddLinearLayer(
         const std::string& name,
         std::shared_ptr<fe::graph::Tensor_attributes> input,
-        const TGPUMatrix<TFloatType, OutputDimension, InputDimension>& weightsData,
-        const TGPUVector<TFloatType, OutputDimension>& biasData)
+        const TGpuMatrix<TFloatType, OutputDimension, InputDimension>& weightsData,
+        const TGpuVector<TFloatType, OutputDimension>& biasData)
     {
         auto weights = AddColumnMajorMatrix(name + "_weights", InputDimension, OutputDimension);
         TensorMap_[weights] = const_cast<void*>(reinterpret_cast<const void*>(weightsData.Data()));
@@ -96,38 +76,7 @@ public:
         auto bias = AddVector(name + "_bias", OutputDimension);
         TensorMap_[bias] = const_cast<void*>(reinterpret_cast<const void*>(biasData.Data()));
 
-        auto matmul = Graph_->matmul(
-            input,
-            weights,
-            fe::graph::Matmul_attributes()
-                .set_name(name + "_matmul")
-                .set_compute_data_type(fe::DataType_t::FLOAT));
-        matmul->set_data_type(fe::DataType_t::FLOAT);
-
-        auto result = Graph_->pointwise(
-            matmul,
-            bias,
-            fe::graph::Pointwise_attributes()
-                .set_name(name + "_result")
-                .set_mode(fe::PointwiseMode_t::ADD)
-                .set_compute_data_type(fe::DataType_t::FLOAT));
-        result->set_data_type(fe::DataType_t::FLOAT);
-        return result;
-    }
-
-    std::shared_ptr<fe::graph::Tensor_attributes> AddReLU(
-        const std::string& name,
-        std::shared_ptr<fe::graph::Tensor_attributes> input)
-    {
-        auto result = Graph_->pointwise(
-            input,
-            fe::graph::Pointwise_attributes()
-                .set_name(name)
-                .set_mode(fe::PointwiseMode_t::RELU_FWD)
-                .set_compute_data_type(fe::DataType_t::FLOAT));
-        result->set_data_type(fe::DataType_t::FLOAT);
-
-        return result;
+        // Your code here.
     }
 
     std::shared_ptr<fe::graph::Graph> Build() const
@@ -137,7 +86,6 @@ public:
         ThrowOnError(Graph_->create_execution_plans({fe::HeurMode_t::A}));
         ThrowOnError(Graph_->check_support(Handle_));
         ThrowOnError(Graph_->build_plans(Handle_, fe::BuildPlanPolicy_t::ALL));
-        //ThrowOnError(Graph_->build_plans(Handle_, fe::BuildPlanPolicy_t::HEURISTICS_CHOICE));
 
         return Graph_;
     }
@@ -165,7 +113,7 @@ public:
         {
             TCudnnGraphBuilder builder(handle);
 
-            auto input = builder.AddMatrix("input", BatchSize, ImageSize * ImageSize);
+            auto input = builder.AddRowMajorMatrix("input", BatchSize, ImageSize * ImageSize);
 
             L1Weights_.ToDevice(network.L1.Weights);
             L1Biases_.ToDevice(network.L1.Biases);
@@ -176,7 +124,6 @@ public:
                 L1Weights_,
                 L1Biases_);
             auto l1ReLU = builder.AddReLU("l1_relu", l1Result);
-            l1ReLU->set_output(true).set_data_type(fe::DataType_t::FLOAT);
 
             L1Graph_ = builder.Build();
 
@@ -193,7 +140,7 @@ public:
         {
             TCudnnGraphBuilder builder(handle);
 
-            auto l1Result = builder.AddMatrix("l1_result", BatchSize, HiddenLayerSize);
+            auto l1Result = builder.AddRowMajorMatrix("l1_result", BatchSize, HiddenLayerSize);
 
             L2Weights_.ToDevice(network.L2.Weights);
             L2Biases_.ToDevice(network.L2.Biases);
@@ -266,22 +213,21 @@ private:
     std::shared_ptr<fe::graph::Tensor_attributes> L2Input_;
     std::shared_ptr<fe::graph::Tensor_attributes> L2Output_;
 
-    TGPUMatrix<TFloatType, HiddenLayerSize, ImageSize * ImageSize> L1Weights_;
-    TGPUVector<TFloatType, HiddenLayerSize> L1Biases_;
-    TGPUMatrix<TFloatType, OutputClassCount, HiddenLayerSize> L2Weights_;
-    TGPUVector<TFloatType, OutputClassCount> L2Biases_;
+    TGpuMatrix<TFloatType, HiddenLayerSize, ImageSize * ImageSize> L1Weights_;
+    TGpuVector<TFloatType, HiddenLayerSize> L1Biases_;
+    TGpuMatrix<TFloatType, OutputClassCount, HiddenLayerSize> L2Weights_;
+    TGpuVector<TFloatType, OutputClassCount> L2Biases_;
 
-    TGPUMatrix<TFloatType, BatchSize, ImageSize * ImageSize> Input_;
-    TGPUMatrix<TFloatType, BatchSize, HiddenLayerSize> L1Result_;
-    TGPUMatrix<TFloatType, BatchSize, OutputClassCount> L2Result_;
-    TGPUVector<int, BatchSize> Result_;
+    TGpuMatrix<TFloatType, BatchSize, ImageSize * ImageSize> Input_;
+    TGpuMatrix<TFloatType, BatchSize, HiddenLayerSize> L1Result_;
+    TGpuMatrix<TFloatType, BatchSize, OutputClassCount> L2Result_;
+    TGpuVector<int, BatchSize> Result_;
 };
 
 int main()
 {
-    // TODO(errors, free)
     cudnnHandle_t handle;
-    cudnnCreate(&handle);
+    CUDNN_CHECK_ERROR(cudnnCreate(&handle));
 
     auto network = ReadMNISTNetwork("data/model.bin");
     auto test = ReadTestSuite("data/test.bin");
@@ -294,6 +240,8 @@ int main()
     };
 
     TestMNISTNetwork<BatchSize>(test, eval);
+
+    CUDNN_CHECK_ERROR(cudnnDestroy(handle));
 
     return 0;
 }
