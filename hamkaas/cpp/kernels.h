@@ -57,6 +57,15 @@ void SlicedSoftmax(
     int64_t size);
 
 template <class T>
+void ReplaceSlice(
+    T* input,
+    int64_t inputSize,
+    const T* replacement,
+    int64_t replacementSize,
+    const int64_t* begin,
+    const int64_t* end);
+
+template <class T>
 void Permute(
     const T* input,
     T* output,

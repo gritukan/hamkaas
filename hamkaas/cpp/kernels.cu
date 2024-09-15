@@ -292,7 +292,6 @@ __global__ void SoftmaxKernel(
     __shared__ T buffer[MaxThreadsPerBlock];
 
     int64_t prefixSize = *prefixSizePtr;
-    if (prefixSize)
     if (threadIdx.x < prefixSize) {
         T max = input[threadIdx.x];
         for (int index = threadIdx.x; index < prefixSize; index += prefixSize) {
@@ -396,6 +395,58 @@ __global__ void PermuteKernel(
         output[outputIndex] = input[inputIndex];
     }
 }
+
+template <class T>
+__global__ void ReplaceKernel(
+    T* input,
+    int64_t inputSize,
+    const T* replacement,
+    int64_t replacementSize,
+    const int64_t* begin,
+    const int64_t* end)
+{
+    assert(*end - *begin == replacementSize);
+    assert(*begin >= 0);
+    assert(*end <= inputSize);
+
+    int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
+    for (int64_t index = threadIndex; index < replacementSize; index += gridDim.x * blockDim.x) {
+        input[index + *begin] = replacement[index];
+    }
+}
+
+template <class T>
+void ReplaceSlice(
+    T* input,
+    int64_t inputSize,
+    const T* replacement,
+    int64_t replacementSize,
+    const int64_t* begin,
+    const int64_t* end)
+{
+    constexpr int64_t ThreadsPerBlock = 256;
+    int64_t blocks = (replacementSize + ThreadsPerBlock - 1) / ThreadsPerBlock;
+    blocks = std::min(blocks, MaxBlockCount);
+
+    ReplaceKernel<T><<<blocks, ThreadsPerBlock>>>(
+        input,
+        inputSize,
+        replacement,
+        replacementSize,
+        begin,
+        end);
+}
+
+#define INSTANTIATE(T) \
+    template void ReplaceSlice( \
+        T* input, \
+        int64_t inputSize, \
+        const T* replacement, \
+        int64_t replacementSize, \
+        const int64_t* begin, \
+        const int64_t* end);
+FOR_ALL_TYPES(INSTANTIATE)
+#undef INSTANTIATE
 
 template <class T>
 void Permute(

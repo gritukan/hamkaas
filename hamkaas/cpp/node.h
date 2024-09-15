@@ -188,8 +188,6 @@ private:
 
     char* TransposedProductBuffer_ = nullptr;
 
-    bool Initialized_ = false;
-
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
 
     template <class T>
@@ -269,6 +267,8 @@ public:
     int64_t GetOutputSize() const override;
     TNodeBase* GetOutputOwner() const override;
 
+    void Initialize(IDevice* /*device*/) override;
+
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
 
@@ -320,6 +320,8 @@ public:
 
     int64_t GetOutputSize() const override;
     TNodeBase* GetOutputOwner() const override;
+
+    void Initialize(IDevice* device) override;
 
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
@@ -432,6 +434,8 @@ public:
     int64_t GetOutputSize() const override;
     TNodeBase* GetOutputOwner() const override;
 
+    void Initialize(IDevice* /*device*/) override;
+
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
 
@@ -440,6 +444,9 @@ private:
     const TNodeBasePtr Replacement_;
     const TNodeBasePtr Begin_;
     const TNodeBasePtr End_;
+
+    template <class T>
+    void DoEvaluateGpu();
 };
 
 class TSlicedSoftmaxNode

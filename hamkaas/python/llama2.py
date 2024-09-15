@@ -300,9 +300,7 @@ def build_model(conf: Config, weights: TransformerWeights):
     hidden_dim = conf.hidden_dim
     head_size = dim // conf.n_heads
 
-    inv_sqrt_head_size_2 = hamkaas.ConstantTensor(torch.full((conf.n_heads, conf.seq_len), 1.0 / math.sqrt(head_size)), name="inv_sqrt_head_size")
-    inv_sqrt_head_size = hamkaas.ConstantTensor(torch.tensor([1.0 / math.sqrt(head_size)], dtype=torch.float32), name="inv_sqrt_head_size")
-    head_zeroes = hamkaas.ConstantTensor(torch.zeros(head_size, dtype=torch.float32), name="head_zeroes")
+    inv_sqrt_head_size_2 = hamkaas.ConstantTensor(torch.full((conf.n_heads, conf.seq_len), 1.0 / math.sqrt(head_size)))
 
     x = hamkaas.InputTensor(name="x", type=torch.float32, shape=[dim])
     pos_indicator = hamkaas.InputTensor(name="pos_indicator", type=torch.float32, shape=[conf.seq_len])
@@ -314,16 +312,15 @@ def build_model(conf: Config, weights: TransformerWeights):
         cache_start_indices.append(hamkaas.InputTensor(name=f"cache_start_{l}", type=torch.int64, shape=[1]))
         cache_end_indices.append(hamkaas.InputTensor(name=f"cache_end_{l}", type=torch.int64, shape=[1]))
 
-    key_cache = hamkaas.BufferNode(name="key_cache", type=torch.float32, shape=[conf.n_layers * conf.seq_len * dim])
-    value_cache = hamkaas.BufferNode(name="value_cache", type=torch.float32, shape=[conf.n_layers * conf.seq_len * dim])
-    att_cache = hamkaas.BufferNode(name="att_cache", type=torch.float32, shape=[conf.n_heads * conf.seq_len])
+    key_cache = hamkaas.BufferTensor(type=torch.float32, shape=[conf.n_layers * conf.seq_len * dim])
+    value_cache = hamkaas.BufferTensor(type=torch.float32, shape=[conf.n_layers * conf.seq_len * dim])
 
     # Actually a weight, but working with indices is not implemented yet.
     assert head_size % 2 == 0
     freq_cis_row = hamkaas.InputTensor(name="freq_cis", type=torch.float32, shape=[head_size // 2, 2])
 
     rms_att_weight = torch.tensor(weights.rms_att_weight, dtype=torch.float32)
-    rms_att_weight = hamkaas.ConstantTensor(rms_att_weight, name="rms_att_weight")
+    rms_att_weight = hamkaas.ConstantTensor(rms_att_weight)
     assert rms_att_weight.get_shape() == [conf.n_layers * dim]
 
     wqs = []
@@ -338,65 +335,65 @@ def build_model(conf: Config, weights: TransformerWeights):
         wq = torch.tensor(weights.wq[i * dim * dim: (i + 1) * dim * dim], dtype=torch.float32)
         wq = wq.reshape([dim, dim])
         wq = wq.transpose(0, 1)
-        wq = hamkaas.ConstantTensor(wq, name=f"wq_{i}")
+        wq = hamkaas.ConstantTensor(wq)
         assert wq.get_shape() == [dim, dim]
         wqs.append(wq)
 
         wk = torch.tensor(weights.wk[i * dim * dim: (i + 1) * dim * dim], dtype=torch.float32)
         wk = wk.reshape([dim, dim])
         wk = wk.transpose(0, 1)
-        wk = hamkaas.ConstantTensor(wk, name=f"wk_{i}")
+        wk = hamkaas.ConstantTensor(wk)
         assert wk.get_shape() == [dim, dim]
         wks.append(wk)
 
         wv = torch.tensor(weights.wv[i * dim * dim: (i + 1) * dim * dim], dtype=torch.float32)
         wv = wv.reshape([dim, dim])
         wv = wv.transpose(0, 1)
-        wv = hamkaas.ConstantTensor(wv, name=f"wv_{i}")
+        wv = hamkaas.ConstantTensor(wv)
         assert wv.get_shape() == [dim, dim]
         wvs.append(wv)
 
         wo = torch.tensor(weights.wo[i * dim * dim: (i + 1) * dim * dim], dtype=torch.float32)
         wo = wo.reshape([dim, dim])
         wo = wo.transpose(0, 1)
-        wo = hamkaas.ConstantTensor(wo, name=f"wo_{i}")
+        wo = hamkaas.ConstantTensor(wo)
         assert wo.get_shape() == [dim, dim]
         wos.append(wo)
 
         rms_ffn = torch.tensor(weights.rms_ffn_weight[i * dim: (i + 1) * dim], dtype=torch.float32)
-        rms_ffn = hamkaas.ConstantTensor(rms_ffn, name=f"rms_ffn_{i}")
+        rms_ffn = hamkaas.ConstantTensor(rms_ffn)
         assert rms_ffn.get_shape() == [dim]
         rms_ffns.append(rms_ffn)
 
         w1 = torch.tensor(weights.w1[i * dim * hidden_dim: (i + 1) * dim * hidden_dim], dtype=torch.float32)
         w1 = w1.reshape([hidden_dim, dim])
         w1 = w1.transpose(0, 1)
-        w1 = hamkaas.ConstantTensor(w1, name=f"w1_{i}")
+        w1 = hamkaas.ConstantTensor(w1)
         assert w1.get_shape() == [dim, hidden_dim]
         w1s.append(w1)
 
         w2 = torch.tensor(weights.w2[i * hidden_dim * dim: (i + 1) * hidden_dim * dim], dtype=torch.float32)
         w2 = w2.reshape([dim, hidden_dim])
         w2 = w2.transpose(0, 1)
-        w2 = hamkaas.ConstantTensor(w2, name=f"w2_{i}")
+        w2 = hamkaas.ConstantTensor(w2)
         assert w2.get_shape() == [hidden_dim, dim]
         w2s.append(w2)
 
         w3 = torch.tensor(weights.w3[i * dim * hidden_dim: (i + 1) * dim * hidden_dim], dtype=torch.float32)
         w3 = w3.reshape([hidden_dim, dim])
         w3 = w3.transpose(0, 1)
-        w3 = hamkaas.ConstantTensor(w3, name=f"w3_{i}")
+        w3 = hamkaas.ConstantTensor(w3)
         assert w3.get_shape() == [dim, hidden_dim]
         w3s.append(w3)
 
     rms_final_weight = torch.tensor(weights.rms_final_weight, dtype=torch.float32)
-    rms_final_weight = hamkaas.ConstantTensor(rms_final_weight, name="rms_final_weight")
+    rms_final_weight = hamkaas.ConstantTensor(rms_final_weight)
     assert rms_final_weight.get_shape() == [dim]
 
     wcls = torch.tensor(weights.wcls, dtype=torch.float32)
     wcls = wcls.reshape([conf.vocab_size, dim])
     wcls = wcls.transpose(0, 1)
-    wcls = hamkaas.ConstantTensor(wcls, name="wcls")
+    wcls = hamkaas.ConstantTensor(wcls)
     assert wcls.get_shape() == [dim, conf.vocab_size]
 
     for l in range(conf.n_layers):
@@ -689,9 +686,9 @@ def run(args):
 
     print("Compiling model...")
 
-    hamkaas.initialize("../cpp/libhamkaas.so")
+    plugin = hamkaas.HamKaasPlugin("../cpp/libhamkaas.so")
 
-    model = hamkaas.compile_model(node, use_gpu=True)
+    model = plugin.compile_model(node, use_gpu=True)
 
     print("Model compiled.")
 

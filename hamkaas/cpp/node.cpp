@@ -333,20 +333,14 @@ std::vector<TNodeBase*> TMulNode::GetInputs() const
 
 int64_t TMulNode::GetBufferSize() const
 {
-    int b = 1;
-    if (Lhs_->GetDimensions() == 3) {
-        b = Lhs_->GetShape()[0];
-    }
+    auto b = GetParameters().B;
 
     return 3 * Align(b) * sizeof(void*) + Align(GetOutputSize());
 }
 
 void TMulNode::SetBuffer(char* buffer)
 {
-    int b = 1;
-    if (Lhs_->GetDimensions() == 3) {
-        b = Lhs_->GetShape()[0];
-    }
+    auto b = GetParameters().B;
 
     LhsMatrices_ = reinterpret_cast<void**>(buffer);
     RhsMatrices_ = reinterpret_cast<void**>(buffer + Align(b) * sizeof(void*));
@@ -768,26 +762,31 @@ std::vector<TNodeBase*> TSliceNode::GetInputs() const
     return {Input_.get()};
 }
 
-TNodeBase* TSliceNode::GetOutputOwner() const
-{
-    return Input_->GetOutputOwner();
-}
-
-void TSliceNode::EvaluateCpu()
-{
-    Output_ = Input_->GetOutput() + Begin_ * Stride_ * GetElementSize();
-}
-
-void TSliceNode::EvaluateGpu(const TEvaluationContext& /*context*/)
-{
-    Output_ = Input_->GetOutput() + Begin_ * Stride_ * GetElementSize();
-}
-
 int64_t TSliceNode::GetOutputSize() const
 {
     // We do not need to allocate memory for the slice
     // as it is just a view of the input tensor.
     return 0;
+}
+
+TNodeBase* TSliceNode::GetOutputOwner() const
+{
+    return Input_->GetOutputOwner();
+}
+
+void TSliceNode::Initialize(IDevice* /*device*/)
+{
+    Output_ = Input_->GetOutput() + Begin_ * Stride_ * GetElementSize();
+}
+
+void TSliceNode::EvaluateCpu()
+{
+    // Do nothing.
+}
+
+void TSliceNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+{
+    // Do nothing.
 }
 
 TTensorMeta TSliceNode::CalculateMeta(const TTensorMeta& input, int64_t begin, int64_t end)
@@ -934,14 +933,19 @@ TNodeBase* TReshapeNode::GetOutputOwner() const
     return Input_->GetOutputOwner();
 }
 
-void TReshapeNode::EvaluateCpu()
+void TReshapeNode::Initialize(IDevice* /*device*/)
 {
     Output_ = Input_->GetOutput();
 }
 
+void TReshapeNode::EvaluateCpu()
+{
+    // Do nothing.
+}
+
 void TReshapeNode::EvaluateGpu(const TEvaluationContext& /*context*/)
 {
-    Output_ = Input_->GetOutput();
+    // Do nothing.
 }
 
 TTensorMeta TReshapeNode::CalculateMeta(const TTensorMeta& input, const std::vector<int64_t>& shape)
@@ -1344,6 +1348,11 @@ TNodeBase* TReplaceSliceNode::GetOutputOwner() const
     return Input_->GetOutputOwner();
 }
 
+void TReplaceSliceNode::Initialize(IDevice* /*device*/)
+{
+    Output_ = Input_->GetOutput();
+}
+
 void TReplaceSliceNode::EvaluateCpu()
 {
     auto* replacement = Replacement_->GetOutput();
@@ -1359,32 +1368,37 @@ void TReplaceSliceNode::EvaluateCpu()
         output + begin * GetElementSize(),
         replacement,
         (end - begin) * GetElementSize());
-
-    Output_ = Input_->GetOutput();
 }
 
-void TReplaceSliceNode::EvaluateGpu(const TEvaluationContext& context)
+void TReplaceSliceNode::EvaluateGpu(const TEvaluationContext& /*context*/)
 {
-    auto* replacement = Replacement_->GetOutput();
+    switch (GetValueType()) {
+    case EValueType::Float32:
+        DoEvaluateGpu<float>();
+        return;
+    case EValueType::Float64:
+        DoEvaluateGpu<double>();
+        return;
+    default:
+        THROW("GPU inference does not support this value type", VAR(GetValueType()));
+    }
+}
 
-    int64_t begin;
-    int64_t end;
-    CUDA_CHECK_ERROR(cudaMemcpy(&begin, Begin_->GetOutput(), sizeof(int64_t), cudaMemcpyDeviceToHost));
-    CUDA_CHECK_ERROR(cudaMemcpy(&end, End_->GetOutput(), sizeof(int64_t), cudaMemcpyDeviceToHost));
+template <class T>
+void TReplaceSliceNode::DoEvaluateGpu()
+{
+    auto* input = reinterpret_cast<T*>(Input_->GetOutput());
+    auto* replacement = reinterpret_cast<const T*>(Replacement_->GetOutput());
+    auto* begin = reinterpret_cast<const int64_t*>(Begin_->GetOutput());
+    auto* end = reinterpret_cast<const int64_t*>(End_->GetOutput());
 
-    auto* output = Input_->GetOutput();
-
-    assert(end - begin == Replacement_->GetElementCount());
-    assert(begin >= 0);
-    assert(end <= Input_->GetElementCount());
-
-    context.Device->DeviceCopy(
-        output + begin * GetElementSize(),
+    ReplaceSlice(
+        input,
+        Input_->GetElementCount(),
         replacement,
-        (end - begin) * GetElementSize());
-    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
-
-    Output_ = Input_->GetOutput();
+        Replacement_->GetElementCount(),
+        begin,
+        end);
 }
 
 TSlicedSoftmaxNode::TSlicedSoftmaxNode(TNodeBasePtr input, TNodeBasePtr prefixSize)
