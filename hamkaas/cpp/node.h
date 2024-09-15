@@ -171,6 +171,8 @@ public:
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
 
+    void Log();
+
 private:
     const TNodeBasePtr Lhs_;
     const TNodeBasePtr Rhs_;
@@ -210,6 +212,9 @@ private:
 
     template <class T>
     void DoEvaluateCpu();
+
+    template <class T>
+    void DoEvaluateGpu();
 };
 
 class TSiLUNode
@@ -230,6 +235,9 @@ private:
 
     template <class T>
     void DoEvaluateCpu();
+
+    template <typename T>
+    void DoEvaluateGpu();
 };
 
 class TSliceNode
@@ -278,6 +286,9 @@ private:
 
     template <class T>
     void DoEvaluateCpu();
+
+    template <class T>
+    void DoEvaluateGpu();
 };
 
 class TReshapeNode
@@ -324,6 +335,9 @@ private:
 
     template <class T>
     void DoEvaluateCpu();
+
+    template <class T>
+    void DoEvaluateGpu();
 };
 
 class THadamardProductNode
@@ -346,6 +360,9 @@ private:
 
     template <class T>
     void DoEvaluateCpu();
+
+    template <class T>
+    void DoEvaluateGpu();
 };
 
 class TPermuteNode
@@ -359,12 +376,24 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
+    int64_t GetBufferSize() const override;
+    void SetBuffer(char* buffer) override;
+
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Input_;
     const std::vector<int64_t> Permutation_;
+
+    int64_t* InputShape_;
+    int64_t* OutputShape_;
+    int64_t* PermutationPtr_;
+
+    bool Initialized_ = false;
+
+    template <class T>
+    void DoEvaluateGpu();
 
     static TTensorMeta CalculateMeta(const TTensorMeta& input, const std::vector<int64_t>& permutation);
 };
@@ -415,6 +444,9 @@ private:
 
     template <class T>
     void DoEvaluateCpu();
+
+    template <class T>
+    void DoEvaluateGpu();
 };
 
 } // namespace NHamKaas

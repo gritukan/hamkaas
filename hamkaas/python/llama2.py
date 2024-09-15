@@ -10,6 +10,8 @@ from typing import List
 import torch
 import hamkaas
 
+import numpy as np
+
 
 class Config:
     dim: int
@@ -298,7 +300,7 @@ def build_model(conf: Config, weights: TransformerWeights):
     hidden_dim = conf.hidden_dim
     head_size = dim // conf.n_heads
 
-    inv_sqrt_head_size_2 = hamkaas.ConstantTensor(torch.tensor([[1.0 / math.sqrt(head_size)]], dtype=torch.float32), name="inv_sqrt_head_size")
+    inv_sqrt_head_size_2 = hamkaas.ConstantTensor(torch.full((conf.n_heads, conf.seq_len), 1.0 / math.sqrt(head_size)), name="inv_sqrt_head_size")
     inv_sqrt_head_size = hamkaas.ConstantTensor(torch.tensor([1.0 / math.sqrt(head_size)], dtype=torch.float32), name="inv_sqrt_head_size")
     head_zeroes = hamkaas.ConstantTensor(torch.zeros(head_size, dtype=torch.float32), name="head_zeroes")
 
@@ -492,11 +494,10 @@ def build_model(conf: Config, weights: TransformerWeights):
         xb = hamkaas.MulNode(hb, w2s[l])
 
         x = hamkaas.SumNode(x, xb)
-
     
     # Final rmsnorm
+    #rr = hamkaas.SumNode(rms_final_weight, rms_final_weight)
     x = hamkaas.RMSNormNode(x, rms_final_weight)
-
     # Classifier into logits
     logits = hamkaas.MulNode(x, wcls)
     #logits.set_debug()
@@ -568,6 +569,34 @@ def sample(probabilities):
             return i
     return n - 1  # In case of rounding errors
 
+def top_k_sampling(logits, k):
+    """
+    Perform top-k sampling from the logits.
+
+    Args:
+        logits (list or numpy array): List of logits (unnormalized probabilities).
+        k (int): The number of top logits to consider for sampling.
+
+    Returns:
+        int: The index of the selected logit.
+    """
+    # Convert logits to a numpy array if it isn't already
+    logits = np.array(logits)
+    
+    # Get the indices of the top-k logits
+    top_k_indices = np.argpartition(logits, -k)[-k:]
+    
+    # Get the corresponding top-k logits
+    top_k_logits = logits[top_k_indices]
+    
+    # Convert logits to probabilities using softmax
+    top_k_probs = np.exp(top_k_logits - np.max(top_k_logits))
+    top_k_probs /= np.sum(top_k_probs)
+    
+    # Sample from the top-k probabilities
+    sampled_index = np.random.choice(top_k_indices, p=top_k_probs)
+    
+    return sampled_index
 
 def argmax(v):
     # return argmax of v
@@ -662,10 +691,7 @@ def run(args):
 
     hamkaas.initialize("../cpp/libhamkaas.so")
 
-    print(hamkaas.create_script(node).script)
-    import sys; sys.exit(0)
-
-    model = hamkaas.compile_model(node)
+    model = hamkaas.compile_model(node, use_gpu=True)
 
     print("Model compiled.")
 
@@ -700,12 +726,19 @@ def run(args):
             inputs[f"cache_end_{l}"] = torch.tensor([loff + (pos + 1) * dim], dtype=torch.int64)
 
         #old_out = node.eval_slow(inputs, buffers, {}).contiguous().view(-1).tolist()
-        transformer(token, pos, config, state, weights)
-        old_out = state.logits
-        logits = model.evaluate(inputs)
-        new_out = logits.contiguous().view(-1).tolist()
-        print('old', old_out[:3], old_out[len(old_out) // 2 : len(old_out) // 2 + 3], old_out[-3:])
-        print('new', new_out[:3], new_out[len(new_out) // 2 : len(new_out) // 2 + 3], new_out[-3:])
+        new_out = model.evaluate(inputs).contiguous().view(-1).tolist()
+        logits = new_out
+        #transformer(token, pos, config, state, weights)
+        #old_out = state.logits
+        #logits = model.evaluate(inputs)
+        #logits = node.eval_slow(inputs, buffers, {}).contiguous().view(-1).tolist()
+        #new_out = logits.contiguous().view(-1).tolist()
+        #for i in range(len(old_out)):
+        #    if abs(old_out[i] - new_out[i]) > 1e-2:
+        #        pass
+        #        print(i, old_out[i], new_out[i])
+        #print('old', old_out[:3], old_out[len(old_out) // 2 : len(old_out) // 2 + 3], old_out[-3:])
+        #print('new', new_out[:3], new_out[len(new_out) // 2 : len(new_out) // 2 + 3], new_out[-3:])
         #sys.exit(0)
 
         # Forward the transformer to get logits for the next token
@@ -721,9 +754,10 @@ def run(args):
                 # Apply the temperature to the logits
                 logits = [i / temperature for i in logits]
                 # Apply softmax to the logits to get the probabilities for the next token
-                softmax(logits, config.vocab_size)
+                #softmax(logits, config.vocab_size)
                 # Sample from this distribution to get the next token
-                next_token = sample(logits)
+                #next_token = sample(logits)
+                next_token = top_k_sampling(logits, 20)
 
         # Following BOS token (1), sentencepiece decoder strips any leading whitespace
         token_str = (
@@ -731,7 +765,7 @@ def run(args):
             if token == 1 and vocab[next_token][0] == ' ' else vocab[next_token]
         )
 
-        #print(token_str, end="")
+        print(token_str, end="")
         sys.stdout.flush()
         
         if next_token == 1:

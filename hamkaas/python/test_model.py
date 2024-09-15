@@ -3,30 +3,17 @@ import torch
 
 hamkaas.initialize("../cpp/libhamkaas.so")
 
-c_1 = torch.tensor([
-    [
-        [1, 2, 3],
-        [3, 4, 5]
-    ],
-    [
-        [5, 7, -1],
-        [3, 4, 1],
-    ]
-], dtype=torch.float32)
+in1_ = hamkaas.ConstantTensor(torch.rand(3, 2, 10))
+in2_ = hamkaas.ConstantTensor(torch.rand(3, 10, 5))
+out = hamkaas.MulNode(in1_, in2_)
+model = hamkaas.compile_model(out, use_gpu=True)
 
-c_2 = torch.tensor([
-    [
-        [32, 49],
-        [21, 19],
-        [1, 1]
-    ],
-    [
-        [5, 3],
-        [-1, 7],
-        [-2, 3]
-    ]
-], dtype=torch.float32)
+print(model.evaluate(inputs={}))
+print(out.eval_slow({}, {}, {}))
+#print(model.evaluate(inputs={}))
+#print(model.evaluate(inputs={}))
 
+"""
 print(c_1 @ c_2)
 
 c_1 = hamkaas.ConstantTensor(c_1)
@@ -49,3 +36,4 @@ model = hamkaas.compile_model(out, use_gpu=True)
 input = torch.tensor([[1, 2], [3, 4]], dtype=torch.int16)
 
 print(model.evaluate({"input": input}))
+"""

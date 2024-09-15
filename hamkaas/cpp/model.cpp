@@ -161,7 +161,8 @@ void TModel::AllocateMemory()
         }
     }
 
-    MemoryPool_ = Device_->DeviceMalloc(allocator.GetWorkingSetSize());
+    MemoryPool_ = Device_->DeviceMalloc(2 * allocator.GetWorkingSetSize());
+    std::cerr << "Allocated memory start = " << reinterpret_cast<int64_t>(MemoryPool_) << " end = " << reinterpret_cast<int64_t>(MemoryPool_ + 2 * allocator.GetWorkingSetSize()) << std::endl;
     for (auto* node : InputNodes_) {
         node->SetOutput(MemoryPool_ + outputMemory[node]);
     }

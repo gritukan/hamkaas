@@ -21,6 +21,11 @@ public:
         memcpy(dest, src, size);
     }
 
+    void DeviceCopy(char* dest, const char* src, int64_t size) const override
+    {
+        memcpy(dest, src, size);
+    }
+
     char* DeviceMalloc(int64_t size) const override
     {
         return static_cast<char*>(malloc(size));
@@ -51,11 +56,22 @@ public:
         CUDA_CHECK_ERROR(cudaMemcpy(dest, src, size, cudaMemcpyDeviceToHost));
     }
 
+    void DeviceCopy(char* dest, const char* src, int64_t size) const override
+    {
+        CUDA_CHECK_ERROR(cudaMemcpy(dest, src, size, cudaMemcpyDeviceToDevice));
+    }
+
     char* DeviceMalloc(int64_t size) const override
     {
         char* ptr;
         auto error = cudaMalloc(&ptr, size);
         if (error != cudaSuccess) {
+            return nullptr;
+        }
+
+        error = cudaMemset(ptr, 0, size);
+        if (error != cudaSuccess) {
+            cudaFree(ptr);
             return nullptr;
         }
 
