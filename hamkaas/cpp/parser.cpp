@@ -216,7 +216,7 @@ TNodeBasePtr ParseScript(const std::string& script)
             skip(',');
             auto weights = parseNodeRef();
 
-            node = std::make_shared<TRMSNormNode>(std::move(input), std::move(weights));
+            node = std::make_shared<TRmsNormNode>(std::move(input), std::move(weights));
         } else if (nodeType == "ReshapeNode") {
             auto input = parseNodeRef();
             skip(',');

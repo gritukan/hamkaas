@@ -58,6 +58,9 @@ public:
     // Returns the pointer to the output buffer.
     char* GetOutput() const;
 
+    // Called before evaluation to initialize the node.
+    virtual void Initialize(IDevice* device);
+
     virtual void EvaluateCpu() = 0;
     virtual void EvaluateGpu(const TEvaluationContext& context) = 0;
 
@@ -133,6 +136,8 @@ public:
     int64_t GetBufferSize() const override;
     void SetBuffer(char* buffer) override;
 
+    void Initialize(IDevice* device) override;
+
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
 
@@ -168,10 +173,10 @@ public:
     int64_t GetBufferSize() const override;
     void SetBuffer(char* buffer) override;
 
+    void Initialize(IDevice* device) override;
+
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
-
-    void Log();
 
 private:
     const TNodeBasePtr Lhs_;
@@ -266,11 +271,11 @@ private:
     static TTensorMeta CalculateMeta(const TTensorMeta& input, int64_t begin, int64_t end);
 };
 
-class TRMSNormNode
+class TRmsNormNode
     : public TNodeBase
 {
 public:
-    explicit TRMSNormNode(TNodeBasePtr input, TNodeBasePtr weights);
+    explicit TRmsNormNode(TNodeBasePtr input, TNodeBasePtr weights);
 
     const TNodeBasePtr& GetInput() const;
     const TNodeBasePtr& GetWeights() const;
@@ -378,6 +383,8 @@ public:
 
     int64_t GetBufferSize() const override;
     void SetBuffer(char* buffer) override;
+
+    void Initialize(IDevice* device) override;
 
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;

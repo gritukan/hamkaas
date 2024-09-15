@@ -84,6 +84,11 @@ char* TNodeBase::GetOutput() const
     return Output_;
 }
 
+void TNodeBase::Initialize(IDevice* /*device*/)
+{
+    // Do nothing.
+}
+
 TInputNode::TInputNode(std::string name, TTensorMeta meta)
     : TNodeBase(std::move(meta))
     , Name_(std::move(name))
@@ -222,19 +227,14 @@ void TSumNode::EvaluateCpu()
     }
 }
 
+void TSumNode::Initialize(IDevice* device)
+{
+    device->CopyToDevice(LhsShape_, Lhs_->GetShape().data(), GetDimensions() * sizeof(int64_t));
+    device->CopyToDevice(RhsShape_, Rhs_->GetShape().data(), GetDimensions() * sizeof(int64_t));
+}
+
 void TSumNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    //if (!Initialized_) {
-        auto lhsShape = Lhs_->GetShape();
-        auto rhsShape = Rhs_->GetShape();
-
-        const auto* device = context.Device;
-        device->CopyToDevice(LhsShape_, lhsShape.data(), GetDimensions() * sizeof(int64_t));
-        device->CopyToDevice(RhsShape_, rhsShape.data(), GetDimensions() * sizeof(int64_t));
-
-        //Initialized_ = true;
-    //}
-
     switch (GetValueType()) {
     case EValueType::Float32:
         DoEvaluateGpu<float>(context);
@@ -441,6 +441,41 @@ void TMulNode::EvaluateGpu(const TEvaluationContext& context)
     }
 }
 
+void TMulNode::Initialize(IDevice* device)
+{
+    int64_t b, n, m, k;
+    if (Lhs_->GetDimensions() == 1) {
+        b = 1;
+        n = 1;
+        m = Rhs_->GetShape()[1];
+        k = Lhs_->GetShape()[0];
+    } else if (Lhs_->GetDimensions() == 2) {
+        b = 1;
+        n = Lhs_->GetShape()[0];
+        m = Rhs_->GetShape()[1];
+        k = Lhs_->GetShape()[1];
+    } else {
+        b = Lhs_->GetShape()[0];
+        n = Lhs_->GetShape()[1];
+        m = Rhs_->GetShape()[2];
+        k = Lhs_->GetShape()[2];
+    }
+
+    std::vector<void*> lhsMatrices(b);
+    std::vector<void*> rhsMatrices(b);
+    std::vector<void*> outputMatrices(b);
+
+    for (int index = 0; index < b; ++index) {
+        lhsMatrices[index] = Lhs_->GetOutput() + index * n * k * GetElementSize();
+        rhsMatrices[index] = Rhs_->GetOutput() + index * k * m * GetElementSize();
+        outputMatrices[index] = TransposedProductBuffer_ + index * n * m * GetElementSize();
+    }
+
+    device->CopyToDevice(LhsMatrices_, lhsMatrices.data(), b * sizeof(char*));
+    device->CopyToDevice(RhsMatrices_, rhsMatrices.data(), b * sizeof(char*));
+    device->CopyToDevice(OutputMatrices_, outputMatrices.data(), b * sizeof(char*));
+}
+
 template <class T>
 void TMulNode::DoEvaluateCpu()
 {
@@ -512,25 +547,6 @@ void TMulNode::DoEvaluateGpu(const TEvaluationContext& context)
         type = CUDA_R_64F;
         break;
     }
-
-    //if (!Initialized_) {
-        std::vector<void*> lhsMatrices(b);
-        std::vector<void*> rhsMatrices(b);
-        std::vector<void*> outputMatrices(b);
-
-        for (int index = 0; index < b; ++index) {
-            lhsMatrices[index] = Lhs_->GetOutput() + index * n * k * sizeof(T);
-            rhsMatrices[index] = Rhs_->GetOutput() + index * k * m * sizeof(T);
-            outputMatrices[index] = TransposedProductBuffer_ + index * n * m * sizeof(T);
-        }
-
-        const auto* device = context.Device;
-        device->CopyToDevice(LhsMatrices_, lhsMatrices.data(), b * sizeof(char*));
-        device->CopyToDevice(RhsMatrices_, rhsMatrices.data(), b * sizeof(char*));
-        device->CopyToDevice(OutputMatrices_, outputMatrices.data(), b * sizeof(char*));
-
-    //    Initialized_ = true;
-    //}
 
     CUBLAS_CHECK_ERROR(cublasGemmBatchedEx(
         context.Bootstrap->GetCublasHandle(),
@@ -823,7 +839,7 @@ TTensorMeta TSliceNode::CalculateMeta(const TTensorMeta& input, int64_t begin, i
     };
 }
 
-TRMSNormNode::TRMSNormNode(TNodeBasePtr input, TNodeBasePtr weights)
+TRmsNormNode::TRmsNormNode(TNodeBasePtr input, TNodeBasePtr weights)
     : TNodeBase(input->GetMeta())
     , Input_(std::move(input))
     , Weights_(std::move(weights))
@@ -839,22 +855,22 @@ TRMSNormNode::TRMSNormNode(TNodeBasePtr input, TNodeBasePtr weights)
     }
 }
 
-const TNodeBasePtr& TRMSNormNode::GetInput() const
+const TNodeBasePtr& TRmsNormNode::GetInput() const
 {
     return Input_;
 }
 
-const TNodeBasePtr& TRMSNormNode::GetWeights() const
+const TNodeBasePtr& TRmsNormNode::GetWeights() const
 {
     return Weights_;
 }
 
-std::vector<TNodeBase*> TRMSNormNode::GetInputs() const
+std::vector<TNodeBase*> TRmsNormNode::GetInputs() const
 {
     return {Input_.get(), Weights_.get()};
 }
 
-void TRMSNormNode::EvaluateCpu()
+void TRmsNormNode::EvaluateCpu()
 {
     switch (GetValueType()) {
     case EValueType::Float32:
@@ -868,7 +884,7 @@ void TRMSNormNode::EvaluateCpu()
     }
 }
 
-void TRMSNormNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+void TRmsNormNode::EvaluateGpu(const TEvaluationContext& /*context*/)
 {
     switch (GetValueType()) {
     case EValueType::Float32:
@@ -883,7 +899,7 @@ void TRMSNormNode::EvaluateGpu(const TEvaluationContext& /*context*/)
 }
 
 template <class T>
-void TRMSNormNode::DoEvaluateCpu()
+void TRmsNormNode::DoEvaluateCpu()
 {
     auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
     auto* weights = reinterpret_cast<const T*>(Weights_->GetOutput());
@@ -903,7 +919,7 @@ void TRMSNormNode::DoEvaluateCpu()
 }
 
 template <class T>
-void TRMSNormNode::DoEvaluateGpu()
+void TRmsNormNode::DoEvaluateGpu()
 {
     auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
     auto* weights = reinterpret_cast<const T*>(Weights_->GetOutput());
@@ -1242,17 +1258,15 @@ void TPermuteNode::SetBuffer(char* buffer)
     PermutationPtr_ = OutputShape_ + GetDimensions();
 }
 
+void TPermuteNode::Initialize(IDevice* device)
+{
+    device->CopyToDevice(InputShape_, Input_->GetShape().data(), GetDimensions() * sizeof(int64_t));
+    device->CopyToDevice(OutputShape_, GetShape().data(), GetDimensions() * sizeof(int64_t));
+    device->CopyToDevice(PermutationPtr_, Permutation_.data(), GetDimensions() * sizeof(int64_t));
+}
+
 void TPermuteNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    //if (!Initialized_) {
-        const auto* device = context.Device;
-        device->CopyToDevice(InputShape_, Input_->GetShape().data(), GetDimensions() * sizeof(int64_t));
-        device->CopyToDevice(OutputShape_, GetShape().data(), GetDimensions() * sizeof(int64_t));
-        device->CopyToDevice(PermutationPtr_, Permutation_.data(), GetDimensions() * sizeof(int64_t));
-
-        //Initialized_ = true;
-    //}
-
     switch (GetValueType()) {
     case EValueType::Float32:
         DoEvaluateGpu<float>();

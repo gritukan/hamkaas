@@ -41,6 +41,7 @@ private:
     void BuildEvaluationOrder();
     void AllocateMemory();
     void FillConstants(const std::unordered_map<std::string, const char*>& constants);
+    void InitializeNodes();
 };
 
 } // namespace NHamKaas

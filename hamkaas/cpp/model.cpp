@@ -50,6 +50,7 @@ void TModel::Compile(
     BuildEvaluationOrder();
     AllocateMemory();
     FillConstants(constants);
+    InitializeNodes();
 }
 
 void TModel::Evaluate(
@@ -187,6 +188,13 @@ void TModel::FillConstants(const std::unordered_map<std::string, const char*>& c
             auto* buffer = constantNode->GetOutput();
             Device_->CopyToDevice(buffer, it->second, constantNode->GetOutputSize());
         }
+    }
+}
+
+void TModel::InitializeNodes()
+{
+    for (auto* node : EvaluationOrder_) {
+        node->Initialize(Device_.get());
     }
 }
 
