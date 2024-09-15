@@ -137,7 +137,7 @@ public:
     TPointwiseNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
 
     int64_t GetConstantMemorySize() const override;
-    void SetConstantMemory(char* constantMemory) override;
+    void SetConstantMemory(char* buffer) override;
 
     void Initialize(IDevice* device) override;
 
@@ -170,13 +170,6 @@ public:
     using TPointwiseNode::TPointwiseNode;
 };
 
-class TComplexHadamardProductNode
-    : public TPointwiseNode<EPointwiseOperation::ComplexHadamardProduct>
-{
-public:
-    using TPointwiseNode::TPointwiseNode;
-};
-
 class TReLUNode
     : public TPointwiseNode<EPointwiseOperation::ReLU>
 {
@@ -198,7 +191,7 @@ public:
     TMatMulNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
 
     int64_t GetConstantMemorySize() const override;
-    void SetConstantMemory(char* constantMemory) override;
+    void SetConstantMemory(char* buffer) override;
 
     void Initialize(IDevice* device) override;
 
@@ -242,16 +235,6 @@ private:
     size_t Stride_;
 
     static TTensorMeta CalculateMeta(const TTensorMeta& input, int64_t begin, int64_t end);
-};
-
-class TRmsNormNode
-    : public TNodeBase
-{
-public:
-    explicit TRmsNormNode(TNodeBasePtr input, TNodeBasePtr weights);
-
-    void EvaluateCpu() override;
-    void EvaluateGpu(const TEvaluationContext& context) override;
 };
 
 class TReshapeNode
@@ -308,16 +291,6 @@ public:
     TNodeBase* GetOutputOwner() const override;
 
     void Initialize(IDevice* /*device*/) override;
-
-    void EvaluateCpu() override;
-    void EvaluateGpu(const TEvaluationContext& context) override;
-};
-
-class TSlicedSoftmaxNode
-    : public TNodeBase
-{
-public:
-    TSlicedSoftmaxNode(TNodeBasePtr input, TNodeBasePtr prefixSize);
 
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;

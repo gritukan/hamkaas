@@ -8,7 +8,6 @@ enum class EPointwiseOperation
 {
     Add,
     HadamardProduct,
-    ComplexHadamardProduct,
     ReLU,
     SiLU,
 };
@@ -17,16 +16,14 @@ constexpr bool IsBinary(EPointwiseOperation operation)
 {
     return
         operation == EPointwiseOperation::Add ||
-        operation == EPointwiseOperation::HadamardProduct ||
-        operation == EPointwiseOperation::ComplexHadamardProduct;
+        operation == EPointwiseOperation::HadamardProduct;
 }
 
 constexpr bool IsBroadcastingSupported(EPointwiseOperation operation)
 {
     return
         operation == EPointwiseOperation::Add ||
-        operation == EPointwiseOperation::HadamardProduct ||
-        operation == EPointwiseOperation::ComplexHadamardProduct;
+        operation == EPointwiseOperation::HadamardProduct;
 }
 
 struct TNonCopyable
@@ -35,7 +32,5 @@ struct TNonCopyable
     TNonCopyable(const TNonCopyable&) = delete;
     TNonCopyable& operator=(const TNonCopyable&) = delete;
 };
-
-int64_t Align(int64_t x);
 
 } // namespace NHamKaas

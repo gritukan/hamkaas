@@ -17,20 +17,4 @@ void Pointwise(
     bool needBroadcasting,
     int64_t outputSize);
 
-void RMSNorm(
-    cudaStream_t stream,
-    const float* input,
-    const float* weights,
-    float* output,
-    int64_t size,
-    float epsilon);
-
-void SlicedSoftmax(
-    cudaStream_t stream,
-    const float* input,
-    float* output,
-    int64_t* prefixSizePtr,
-    int64_t size,
-    int64_t vectorSize);
-
 } // namespace NHamKaas

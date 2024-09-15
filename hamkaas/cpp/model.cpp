@@ -36,7 +36,13 @@ TModel::~TModel()
         CUDA_ASSERT(cudaGraphExecDestroy(GraphExec_));
     }
 
-    // (lab4/02): Your code here: free allocated memory.
+    if (MemoryPool_) {
+        if (UseGpu_) {
+            CUDA_ASSERT(cudaFree(MemoryPool_));
+        } else {
+            free(MemoryPool_);
+        }
+    }
 }
 
 void TModel::Compile(
@@ -137,7 +143,7 @@ void TModel::BuildEvaluationOrder()
 
 void TModel::AllocateMemory()
 {
-    // (lab4/02): Your code here: allocate output and buffer memory for all nodes.
+    // (lab4/02): Your code here. Allocate memory for nodes.
 }
 
 void TModel::FillConstants(const std::unordered_map<std::string, const char*>& constants)

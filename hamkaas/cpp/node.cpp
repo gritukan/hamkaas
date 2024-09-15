@@ -68,7 +68,6 @@ void TNodeBase::ReplaceInput(TNodeBasePtr oldInput, TNodeBasePtr newInput)
         }
     }
 }
-
 int64_t TNodeBase::GetConstantMemorySize() const
 {
     return 0;
@@ -233,7 +232,7 @@ void TPointwiseNode<Operation>::EvaluateCpu()
 
     std::vector<int64_t> rhsIndices(GetDimensions());
 
-    constexpr int64_t lhsStep = (Operation == EPointwiseOperation::ComplexHadamardProduct) ? 2 : 1;
+    constexpr int64_t lhsStep = 1;
 
     for (int64_t lhsIndex = 0; lhsIndex < GetElementCount(); lhsIndex += lhsStep) {
         int64_t rhsIndex = lhsIndex;
@@ -332,9 +331,6 @@ void TPointwiseNode<Operation>::DoEvaluateCpu(const float* lhsPtr, const float* 
         *outputPtr = *lhsPtr + *rhsPtr;
     } else if constexpr (Operation == EPointwiseOperation::HadamardProduct) {
         *outputPtr = *lhsPtr * *rhsPtr;
-    } else if constexpr (Operation == EPointwiseOperation::ComplexHadamardProduct) {
-        *outputPtr = *lhsPtr * *rhsPtr - *(lhsPtr + 1) * *(rhsPtr + 1);
-        *(outputPtr + 1) = *lhsPtr * *(rhsPtr + 1) + *(lhsPtr + 1) * *rhsPtr;
     } else {
         assert(false);
     }
@@ -342,7 +338,6 @@ void TPointwiseNode<Operation>::DoEvaluateCpu(const float* lhsPtr, const float* 
 
 template class TPointwiseNode<EPointwiseOperation::Add>;
 template class TPointwiseNode<EPointwiseOperation::HadamardProduct>;
-template class TPointwiseNode<EPointwiseOperation::ComplexHadamardProduct>;
 template class TPointwiseNode<EPointwiseOperation::ReLU>;
 template class TPointwiseNode<EPointwiseOperation::SiLU>;
 
@@ -352,13 +347,13 @@ TMatMulNode::TMatMulNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
 
 int64_t TMatMulNode::GetConstantMemorySize() const
 {
-    // (lab3/04): you will probably need to change it if cuBLAS is used.
+    // (lab4/03): Your code here. You may need it in case of using cuBLAS.
     return 0;
 }
 
-void TMatMulNode::SetConstantMemory(char* constantMemory)
+void TMatMulNode::SetConstantMemory(char* buffer)
 {
-    // (lab3/04): you will probably need to change it if cuBLAS is used.
+    // (lab4/03): Your code here. You may need it in case of using cuBLAS.
 }
 
 TTensorMeta TMatMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
@@ -416,7 +411,9 @@ TTensorMeta TMatMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta
 
 void TMatMulNode::Initialize(IDevice* device)
 {
-    // (lab4/03): Your code here: implement the matrix multiplication.
+    auto [b, n, m, k] = GetParameters();
+
+    // (lab4/03): Your code here.
 }
 
 void TMatMulNode::EvaluateCpu()
@@ -442,7 +439,7 @@ void TMatMulNode::EvaluateCpu()
 
 void TMatMulNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    // (lab4/03): Your code here: implement the matrix multiplication.
+    // (lab4/03): Your code here.
 }
 
 TMatMulNode::TParameters TMatMulNode::GetParameters() const
@@ -540,57 +537,6 @@ TTensorMeta TSliceNode::CalculateMeta(const TTensorMeta& input, int64_t begin, i
     };
 }
 
-TRmsNormNode::TRmsNormNode(TNodeBasePtr input, TNodeBasePtr weights)
-    : TNodeBase(input->GetMeta(), {input, weights})
-{
-    if (input->GetValueType() != weights->GetValueType()) {
-        THROW("Different value types", VAR(input->GetValueType()), VAR(weights->GetValueType()));
-    }
-    if (input->GetValueType() != EValueType::Float32) {
-        THROW("Unsupported value type", VAR(input->GetValueType()));
-    }
-    if (input->GetDimensions() != 1) {
-        THROW("RMS normalization is supported for vectors only", VAR(input->GetDimensions()));
-    }
-    if (input->GetShape() != weights->GetShape()) {
-        THROW("Different shapes", VAR(input->GetShape()), VAR(weights->GetShape()));
-    }
-}
-
-void TRmsNormNode::EvaluateCpu()
-{
-    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
-    auto* weights = reinterpret_cast<const float*>(Inputs_[1]->GetOutput());
-    auto* output = reinterpret_cast<float*>(GetOutput());
-
-    float sum = 0.0;
-    for (int64_t index = 0; index < Inputs_[0]->GetElementCount(); ++index) {
-        sum += input[index] * input[index];
-    }
-    sum /= Inputs_[0]->GetElementCount();
-    sum += 1e-5;
-    sum = 1.0 / sqrt(sum);
-
-    for (int64_t index = 0; index < Inputs_[0]->GetElementCount(); ++index) {
-        output[index] = weights[index] * (input[index] * sum);
-    }
-}
-
-void TRmsNormNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
-    auto* weights = reinterpret_cast<const float*>(Inputs_[1]->GetOutput());
-    auto* output = reinterpret_cast<float*>(GetOutput());
-
-    RMSNorm(
-        context.Stream,
-        input,
-        weights,
-        output,
-        Inputs_[0]->GetElementCount(),
-        /*epsilon*/ 1e-5);
-}
-
 TReshapeNode::TReshapeNode(TNodeBasePtr input, std::vector<int64_t> shape)
     : TNodeBase(CalculateMeta(input->GetMeta(), shape), {input})
     , Shape_(std::move(shape))
@@ -672,23 +618,23 @@ void TPermuteNode::EvaluateCpu()
 
 int64_t TPermuteNode::GetConstantMemorySize() const
 {
-    // (lab3/04): you will probably need to change it.
+    // (lab4/03): Your code here.
     return 0;
 }
 
 void TPermuteNode::SetConstantMemory(char* buffer)
 {
-    // (lab3/04): you will probably need to change it.
+    // (lab4/03): Your code here.
 }
 
 void TPermuteNode::Initialize(IDevice* device)
 {
-    // (lab3/04): you will probably need to change it.
+    // (lab4/03): Your code here.
 }
 
 void TPermuteNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    // (lab3/04): your code here: implement the tensor permutation.
+    // (lab4/03): Your code here.
 }
 
 TTensorMeta TPermuteNode::CalculateMeta(const TTensorMeta& input, const std::vector<int64_t>& permutation)
@@ -792,73 +738,7 @@ void TReplaceSliceNode::EvaluateCpu()
 
 void TReplaceSliceNode::EvaluateGpu(const TEvaluationContext& context)
 {
-    // (lab3/04): your code here: implement the slice replacement.
-}
-
-TSlicedSoftmaxNode::TSlicedSoftmaxNode(TNodeBasePtr input, TNodeBasePtr prefixSize)
-    : TNodeBase(input->GetMeta(), {input, prefixSize})
-{
-    if (prefixSize->GetDimensions() != 1) {
-        THROW("Prefix size should be a 1D tensor", VAR(prefixSize->GetDimensions()));
-    }
-    if (prefixSize->GetShape()[0] != 1) {
-        THROW("Prefix size should be a 1D tensor", VAR(prefixSize->GetShape()[0]));
-    }
-    if (prefixSize->GetValueType() != EValueType::Int64) {
-        THROW("Prefix size should be an int64 tensor", VAR(prefixSize->GetValueType()));
-    }
-}
-
-void TSlicedSoftmaxNode::EvaluateCpu()
-{
-    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
-    auto prefixSize = *reinterpret_cast<const int64_t*>(Inputs_[1]->GetOutput());
-    auto* output = reinterpret_cast<float*>(GetOutput());
-
-    if (prefixSize == 0) {
-        memcpy(output, input, GetElementCount() * GetElementSize());
-        return;
-    }
-
-    if (prefixSize > GetShape().back()) {
-        THROW("Invalid prefix size", VAR(prefixSize), VAR(GetShape().back()));
-    }
-
-    int64_t vectorSize = GetShape().back();
-    for (int64_t startIndex = 0; startIndex < GetElementCount(); startIndex += vectorSize) {
-        float max = input[startIndex];
-        for (int64_t index = 1; index < prefixSize; ++index) {
-            max = std::max(max, input[startIndex + index]);
-        }
-
-        float expSum = 0.0;
-        for (int64_t index = 0; index < prefixSize; ++index) {
-            expSum += exp(input[startIndex + index] - max);
-        }
-
-        for (int64_t index = 0; index < prefixSize; ++index) {
-            output[startIndex + index] = exp(input[startIndex + index] - max) / expSum;
-        }
-
-        for (int64_t index = prefixSize; index < vectorSize; ++index) {
-            output[startIndex + index] = input[startIndex + index];
-        }
-    }
-}
-
-void TSlicedSoftmaxNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
-    auto* prefixSizePtr = reinterpret_cast<int64_t*>(Inputs_[1]->GetOutput());
-    auto* output = reinterpret_cast<float*>(GetOutput());
-
-    SlicedSoftmax(
-        context.Stream,
-        input,
-        output,
-        prefixSizePtr,
-        GetElementCount(),
-        GetShape().back());
+    // (lab4/03): Your code here.
 }
 
 } // namespace NHamKaas

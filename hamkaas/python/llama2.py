@@ -1,4 +1,4 @@
-# llama2.py
+# Based on https://github.com/tairov/llama2.py by Aydyn Tairov (which is based on llama2.c by Andrej Karpathy)
 import os
 import sys
 import time
@@ -90,217 +90,12 @@ def tokenizer_init(conf: Config, file):
     return vocab, vocab_scores, max_token_length
 
 
-def accum(a, b):
-    for i in range(len(a)):
-        a[i] += b[i]
-    return a
-
-
-def rmsnorm(out, x, weight):
-    size = len(x)
-    # calculate sum of squares
-    ss = 0.0
-    for j in range(size):
-        ss += x[j] * x[j]
-    ss /= size
-    ss += 1e-5
-    ss = 1.0 / math.sqrt(ss)
-    # normalize and scale
-    for j in range(size):
-        out[j] = weight[j] * (ss * x[j])
-    return out
-
-
-def softmax(x, size):
-    # find max value (for numerical stability)
-    max_val = x[0]
-    for i in range(1, size):
-        if x[i] > max_val:
-            max_val = x[i]
-    # exp and sum
-    exp_sum = 0.0
-    for i in range(size):
-        x[i] = math.exp(x[i] - max_val)
-        exp_sum += x[i]
-    # normalize
-    for i in range(size):
-        x[i] /= exp_sum
-    return x
-
-def matmul(xout, x, w, n, d):
-    # W (d,n) @ x (n,) -> xout (d,)
-    # by far the most amount of time is spent inside this little function
-    for i in range(d):
-        val = 0.0
-        for j in range(n):
-            val += w[i * n + j] * x[j]
-        xout[i] = val
-    return xout
-
-
-class RunState:
-    x: List[float]
-    xb: List[float]
-    q: List[float]
-    k: List[float]
-    v: List[float]
-    att: List[float]
-    key_cache: List[float]
-    value_cache: List[float]
-    xb2: List[float]
-    hb: List[float]
-    hb2: List[float]
-    logits: List[float]
-    debug: List[float]
-
-
-import copy
-
-# token, pos, config, state, weights
-def transformer(token: int, pos: int, conf: Config, state: RunState, weights: TransformerWeights) -> None:
-    # A few convenience variables
-    x = state.x
-    dim = conf.dim
-    hidden_dim = conf.hidden_dim
-    head_size = dim // conf.n_heads
-
-    # Copy the token embedding into x
-    content_row = weights.token_embedding_table[token * dim: (token + 1) * dim]
-    x[:] = content_row
-
-    # Pluck out the "pos" row of freq_cis_real and freq_cis_imag
-    freq_cis_real_row = weights.freq_cis_real[pos *
-                                              head_size // 2: (pos + 1) * head_size // 2]
-    freq_cis_imag_row = weights.freq_cis_imag[pos *
-                                              head_size // 2: (pos + 1) * head_size // 2]
-
-    # Forward all the layers
-    for l in range(conf.n_layers):
-        # Attention rmsnorm
-        state.xb = rmsnorm(state.xb, x, weights.rms_att_weight[l * dim: (l + 1) * dim])
-
-        # QKV matmuls for this position
-        state.q = matmul(state.q, state.xb, weights.wq[l * dim * dim: (l + 1) * dim * dim], dim, dim)
-        state.k = matmul(state.k, state.xb, weights.wk[l * dim * dim: (l + 1) * dim * dim], dim, dim)
-        state.v = matmul(state.v, state.xb, weights.wv[l * dim * dim: (l + 1) * dim * dim], dim, dim)
-
-        # Apply RoPE rotation to the q and k vectors for each head
-        for h in range(conf.n_heads):
-            # Get the q and k vectors for this head
-            q = state.q[h * head_size: (h + 1) * head_size]
-            k = state.k[h * head_size: (h + 1) * head_size]
-
-            # Rotate q and k by the freq_cis_real and freq_cis_imag
-            for i in range(0, head_size, 2):
-                q0, q1 = q[i], q[i + 1]
-                k0, k1 = k[i], k[i + 1]
-                fcr = freq_cis_real_row[i // 2]
-                fci = freq_cis_imag_row[i // 2]
-                q[i] = q0 * fcr - q1 * fci
-                q[i + 1] = q0 * fci + q1 * fcr
-                k[i] = k0 * fcr - k1 * fci
-                k[i + 1] = k0 * fci + k1 * fcr
-
-            # reassigned back to state.q and state.k
-            state.q[h * head_size: (h + 1) * head_size] = q
-            state.k[h * head_size: (h + 1) * head_size] = k
-
-        # Save key,value at this time step (pos) to our kv cache
-        loff = l * conf.seq_len * dim  # kv cache layer offset for convenience
-
-        state.key_cache[loff + pos * dim: loff + (pos + 1) * dim] = state.k
-        state.value_cache[loff + pos * dim: loff + (pos + 1) * dim] = state.v
-
-        #print('OLD', loff + pos * dim, loff + (pos + 1) * dim, id(state.key_cache))
-        # Multihead attention. Iterate over all heads
-        for h in range(conf.n_heads):
-            # Get the query vector for this head
-            q = state.q[h * head_size: (h + 1) * head_size]
-
-            # Attention scores for this head
-            att = state.att[h * conf.seq_len: (h + 1) * conf.seq_len]
-
-            # Iterate over all timesteps, including the current one
-            for t in range(conf.seq_len): # XXX
-                # Get the key vector for this head and at this timestep
-                k = state.key_cache[loff + t * dim + h * head_size: loff + (t + 1) * dim + h * head_size]
-
-                # Calculate the attention score as the dot product of q and k
-                score = sum(q[i] * k[i] for i in range(head_size))
-                score /= math.sqrt(head_size)
-
-                # Save the score to the attention buffer
-                att[t] = score
-                state.debug = att
-
-            # Softmax the scores to get attention weights, from 0..pos inclusively
-            #if l == 0 :
-            #    print('old', att[:10])
-            att = softmax(att, pos + 1)
-            xb_ptr = h * head_size
-            # Weighted sum of the values, store back into xb
-            state.xb[xb_ptr: (h + 1) * head_size] = [0.0] * head_size
-            for t in range(conf.seq_len):
-                # Get the value vector for this head and at this timestep
-                v = state.value_cache[loff + t * dim + h *
-                                      head_size: loff + (t + 1) * dim + h * head_size]
-                # Get the attention weight for this timestep
-                a = att[t]
-                # Accumulate the weighted value into xb
-                ind = 1 if t <= pos else 0
-                for i in range(head_size):
-                    state.xb[xb_ptr + i] += a * v[i] * ind
-    
-        # Final matrix multiplication to get the output of the attention
-        state.xb2 = matmul(state.xb2, state.xb, weights.wo[l * dim * dim:(l + 1) * dim * dim], dim, dim)
-
-        # Residual connection back into x
-        x = accum(x, state.xb2)
-
-
-        # FFN rmsnorm
-        state.xb = rmsnorm(state.xb, x, weights.rms_ffn_weight[l * dim:(l + 1) * dim])
-
-        # Calculate self.w1(x) and self.w3(x) for FFN
-        state.hb = matmul(state.hb, state.xb,
-                          weights.w1[l * dim * hidden_dim:
-                                     (l + 1) * dim * hidden_dim],
-                          dim, hidden_dim)
-
-        state.hb2 = matmul(state.hb2, state.xb, weights.w3[l * dim * hidden_dim:
-                                                           (l + 1) * dim * hidden_dim],
-                           dim, hidden_dim)
-
-        # Apply SiLU activation function (silu(x) = x * sigmoid(x))
-        state.hb = [state.hb[i] * (1.0 / (1.0 + math.exp(-state.hb[i])))
-                    for i in range(hidden_dim)]
-
-        # Elementwise multiply with w3(x)
-        state.hb = [state.hb[i] * state.hb2[i] for i in range(hidden_dim)]
-
-        # Final matrix multiplication to get the output of the FFN
-        state.xb = matmul(state.xb, state.hb, weights.w2[l * dim * hidden_dim:
-                                                         (
-                                                                 (l + 1)
-                                                                 * dim * hidden_dim
-                                                         )], hidden_dim, dim)
-
-        # Residual connection
-        x = accum(x, state.xb)
-
-    # Final rmsnorm
-    x = rmsnorm(x, x, weights.rms_final_weight)
-
-    # Classifier into logits
-    state.logits = matmul(state.logits, x, weights.wcls, dim, conf.vocab_size)
-    state.debug = state.logits
-
 def build_model(conf: Config, weights: TransformerWeights):
     dim = conf.dim
     hidden_dim = conf.hidden_dim
     head_size = dim // conf.n_heads
 
-    inv_sqrt_head_size_2 = hamkaas.ConstantTensor(torch.full((conf.n_heads, conf.seq_len), 1.0 / math.sqrt(head_size)))
+    inv_sqrt_head_size_2 = hamkaas.ConstantTensor(torch.tensor([[1.0 / math.sqrt(head_size)]]))
 
     x = hamkaas.InputTensor(name="x", type=torch.float32, shape=[dim])
     pos_indicator = hamkaas.InputTensor(name="pos_indicator", type=torch.float32, shape=[conf.seq_len])
@@ -398,17 +193,15 @@ def build_model(conf: Config, weights: TransformerWeights):
 
     for l in range(conf.n_layers):
         # Attention rmsnorm
-        layer_rms_att_weight = hamkaas.SliceNode(rms_att_weight, l * dim, (l + 1) * dim)
-        xb = hamkaas.RMSNormNode(x, layer_rms_att_weight)
+        layer_rms_att_weight = rms_att_weight[l * dim: (l + 1) * dim]
+        xb = x.rms_norm(layer_rms_att_weight)
 
         # QKV matmuls for this position
-        q = hamkaas.MatMulNode(xb, wqs[l])
-        k = hamkaas.MatMulNode(xb, wks[l])
-        v = hamkaas.MatMulNode(xb, wvs[l])
+        q = xb @ wqs[l]
+        k = xb @ wks[l]
+        v = xb @ wvs[l]
 
         # Apply RoPE rotation to the q and k vectors for each head
-        # q, k [head_count, head_size / 2, 2] * freq_cis_row[head_size / 2, 2] -> [head_count, head_size / 2, 2]
-
         q = q.reshape([conf.n_heads, head_size // 2, 2])
         k = k.reshape([conf.n_heads, head_size // 2, 2])
 
@@ -420,100 +213,66 @@ def build_model(conf: Config, weights: TransformerWeights):
         q = q.reshape([conf.n_heads * head_size])
         k = k.reshape([conf.n_heads * head_size])
 
-        # for h in range(conf.n_heads):
-        #     # Get the q and k vectors for this head
-        #     q_head = hamkaas.SliceNode(q, h * head_size, (h + 1) * head_size)
-        #     k_head = hamkaas.SliceNode(k, h * head_size, (h + 1) * head_size)
-
-        #     # Rotate q and k by the freq_cis_real and freq_cis_imag
-        #     q_head = hamkaas.ReshapeNode(q_head, [head_size // 2, 2])
-        #     k_head = hamkaas.ReshapeNode(k_head, [head_size // 2, 2])
-
-        #     q_head = hamkaas.ComplexHadamardProductNode(q_head, freq_cis_row)
-        #     k_head = hamkaas.ComplexHadamardProductNode(k_head, freq_cis_row)
-
-        #     q_head = hamkaas.ReshapeNode(q_head, [head_size])
-        #     k_head = hamkaas.ReshapeNode(k_head, [head_size])
-
-        #     q = hamkaas.ReplaceSlice(q, q_head, h * head_size, (h + 1) * head_size)
-        #     k = hamkaas.ReplaceSlice(k, k_head, h * head_size, (h + 1) * head_size)
-
         # Save key,value at this time step (pos) to our kv cache
         loff = l * conf.seq_len * dim
         cache_start = cache_start_indices[l]
         cache_end = cache_end_indices[l]
-        key_cache = hamkaas.ReplaceSlice(key_cache, k, cache_start, cache_end)
-        value_cache = hamkaas.ReplaceSlice(value_cache, v, cache_start, cache_end)
+        key_cache = key_cache.replace(k, cache_start, cache_end)
+        value_cache = value_cache.replace(v, cache_start, cache_end)
 
-        q_m = hamkaas.ReshapeNode(q, [conf.n_heads, head_size, 1])
- 
-        k_m = hamkaas.SliceNode(key_cache, loff, loff + conf.seq_len * dim)
-        k_m = hamkaas.ReshapeNode(k_m, [conf.seq_len, conf.n_heads, head_size])
+        q_m = q.reshape([conf.n_heads, head_size, 1])
+
+        k_m = key_cache[loff: loff + conf.seq_len * dim].reshape([conf.seq_len, conf.n_heads, head_size])
         # [heads, seq_len, head_size]
-        k_m = hamkaas.Permute(k_m, [1, 0, 2])
+        k_m = k_m.permute([1, 0, 2])
 
-        scores = hamkaas.MatMulNode(k_m, q_m) # [conf.n_heads, conf.seq_len, 1]
-        # if l == 0:
-        #    scores.set_debug()
-        assert scores.get_shape() == [conf.n_heads, conf.seq_len, 1]
-        scores = hamkaas.ReshapeNode(scores, [conf.n_heads, conf.seq_len])
-        scores = hamkaas.HadamardProductNode(scores, inv_sqrt_head_size_2)
+        # [conf.n_heads, conf.seq_len, 1]
+        scores = k_m @ q_m
+        scores = scores.reshape([conf.n_heads, conf.seq_len])
+        scores = scores * inv_sqrt_head_size_2
 
         scores = scores.sliced_softmax(pos_plus_one)
 
         pos_indicator = pos_indicator.reshape([1, conf.seq_len])
         scores = scores * pos_indicator
 
-        # Multihead attention. Iterate over all heads.
-        # for h in range(conf.n_heads):
-        #     att = hamkaas.SliceNode(scores, h * conf.seq_len, (h + 1) * conf.seq_len)
-        #     #if l == 0:
-        #     #    att.set_debug()
+        # Multihead attention.
+        v_m = value_cache[loff: loff + conf.seq_len * dim].reshape([conf.seq_len, conf.n_heads, head_size])
+        v_m = v_m.permute([1, 2, 0])
 
-        #     att = hamkaas.SlicedSoftmaxNode(att, pos_plus_one)
-        #     att = hamkaas.HadamardProductNode(att, pos_indicator)
-
-        #     scores = hamkaas.ReplaceSlice(scores, att, h * conf.seq_len, (h + 1) * conf.seq_len)
-
-        v_m = hamkaas.SliceNode(value_cache, loff, loff + conf.seq_len * dim)
-        v_m = hamkaas.ReshapeNode(v_m, [conf.seq_len, conf.n_heads, head_size])
-        v_m = hamkaas.Permute(v_m, [1, 2, 0])
-        assert v_m.get_shape() == [conf.n_heads, head_size, conf.seq_len]
-
-        scores = hamkaas.ReshapeNode(scores, [conf.n_heads, conf.seq_len, 1])
-        prod = hamkaas.MatMulNode(v_m, scores) # [conf.n_heads, 1, head_size]
-        prod = hamkaas.ReshapeNode(prod, [conf.n_heads * head_size])
-        xb = hamkaas.ReplaceSlice(xb, prod, 0, conf.n_heads * head_size)
+        scores = scores.reshape([conf.n_heads, conf.seq_len, 1])
+        prod = v_m @ scores # [conf.n_heads, 1, head_size]
+        prod = prod.reshape([conf.n_heads * head_size])
+        xb = prod
 
         # Final matrix multiplication to get the output of the attention
-        xb2 = hamkaas.MatMulNode(xb, wos[l])
+        xb2 = xb @ wos[l]
 
         # Residual connection back into x
-        x = hamkaas.SumNode(x, xb2)
+        x = x + xb2
 
         # FFN rmsnorm
-        xb = hamkaas.RMSNormNode(x, rms_ffns[l])
+        xb = x.rms_norm(rms_ffns[l])
 
-        hb = hamkaas.MatMulNode(xb, w1s[l])
-        hb2 = hamkaas.MatMulNode(xb, w3s[l])
+        hb = xb @ w1s[l]
+        hb2 = xb @ w3s[l]
 
         # Apply SiLU activation function (silu(x) = x * sigmoid(x))
-        hb = hamkaas.SiLUNode(hb)
+        hb = hb.silu()
    
         # Elementwise multiply with w3(x)
-        hb = hamkaas.HadamardProductNode(hb, hb2)
+        hb = hb * hb2
 
         # Final matrix multiplication to get the output of the FFN
-        xb = hamkaas.MatMulNode(hb, w2s[l])
+        xb = hb @ w2s[l]
 
-        x = hamkaas.SumNode(x, xb)
+        x = x + xb
     
     # Final rmsnorm
-    #rr = hamkaas.SumNode(rms_final_weight, rms_final_weight)
-    x = hamkaas.RMSNormNode(x, rms_final_weight)
+    x = x.rms_norm(rms_final_weight)
     # Classifier into logits
-    logits = hamkaas.MatMulNode(x, wcls)
-    #logits.set_debug()
+
+    logits = x @ wcls
     return logits
 
 
@@ -676,10 +435,6 @@ def run(args):
     with open("tokenizer.bin", "rb") as file:
         vocab, vocab_scores, max_token_length = tokenizer_init(config, file)
 
-    # Create and initialize the application RunState
-    state = RunState()
-    init_run_state(state, config)
-
     # Process the prompt, if any
     prompt_tokens = []
     if prompt:
@@ -708,18 +463,6 @@ def run(args):
 
     print("Model compiled.")
 
-    buffers = {
-        "key_cache": torch.zeros(config.n_layers * config.seq_len * config.dim, dtype=torch.float32),
-        "value_cache": torch.zeros(config.n_layers * config.seq_len * config.dim, dtype=torch.float32),
-        "att_cache": torch.zeros(config.n_heads * config.seq_len, dtype=torch.float32),
-    }
-
-    dbuffers = {
-        "key_cache": torch.zeros(config.n_layers * config.seq_len * config.dim, dtype=torch.float32),
-        "value_cache": torch.zeros(config.n_layers * config.seq_len * config.dim, dtype=torch.float32),
-        "att_cache": torch.zeros(config.n_heads * config.seq_len, dtype=torch.float32),
-    }
-
     while pos < steps:
         head_size = config.dim // config.n_heads
 
@@ -738,21 +481,7 @@ def run(args):
             inputs[f"cache_start_{l}"] = torch.tensor([loff + pos * dim], dtype=torch.int64)
             inputs[f"cache_end_{l}"] = torch.tensor([loff + (pos + 1) * dim], dtype=torch.int64)
 
-        #old_out = node.eval_slow(inputs, buffers, {}).contiguous().view(-1).tolist()
-        new_out = model.evaluate(inputs).contiguous().view(-1).tolist()
-        logits = new_out
-        #transformer(token, pos, config, state, weights)
-        #old_out = state.logits
-        #logits = model.evaluate(inputs)
-        #logits = node.eval_slow(inputs, buffers, {}).contiguous().view(-1).tolist()
-        #new_out = logits.contiguous().view(-1).tolist()
-        #for i in range(len(old_out)):
-        #    if abs(old_out[i] - new_out[i]) > 1e-2:
-        #        pass
-        #        print(i, old_out[i], new_out[i])
-        #print('old', old_out[:3], old_out[len(old_out) // 2 : len(old_out) // 2 + 3], old_out[-3:])
-        #print('new', new_out[:3], new_out[len(new_out) // 2 : len(new_out) // 2 + 3], new_out[-3:])
-        #sys.exit(0)
+        logits = model.evaluate(inputs).contiguous().view(-1).tolist()
 
         # Forward the transformer to get logits for the next token
         if pos < len(prompt_tokens):

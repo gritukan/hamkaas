@@ -2,6 +2,7 @@
 
 #include "error.h"
 
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 
@@ -47,23 +48,23 @@ public:
 
     void CopyToDevice(void* dest, const void* src, int64_t size, bool sync) const override
     {
-        // (lab4/02): Your code here: copy memory to device.
+        // (lab4/03): Your code here.
     }
 
     void CopyToHost(void* dest, const void* src, int64_t size, bool sync) const override
     {
-        // (lab4/02): Your code here: copy memory to host.
+        // (lab4/03): Your code here.
     }
 
     char* DeviceMalloc(int64_t size) const override
     {
-        // (lab4/02): Your code here: allocate device memory.
+        // (lab4/03): Your code here.
         return nullptr;
     }
 
     void DeviceFree(char* ptr) const override
     {
-        // (lab4/02): Your code here: free device memory.
+        // (lab4/03): Your code here.
     }
 
 private:

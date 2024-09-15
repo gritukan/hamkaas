@@ -33,6 +33,8 @@ private:
 
     std::unique_ptr<IDevice> Device_;
 
+    char* MemoryPool_ = nullptr;
+
     cudaStream_t Stream_ = nullptr;
     cudaGraph_t Graph_ = nullptr;
     cudaGraphExec_t GraphExec_ = nullptr;

@@ -12,7 +12,6 @@ import torch.nn
 # For now, we support only these types for hamkaas.
 _SUPPORTED_TENSOR_TYPES = [
     torch.float32,
-    torch.float64,
     torch.int64,
 ]
 
@@ -41,20 +40,6 @@ class HamKaasNode(ABC):
 
     @abstractmethod
     def get_shape(self) -> List[int]:
-        ...
-
-    def eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        if id(self) in cache:
-            return cache[id(self)]
-
-        result = self.do_eval_slow(inputs, buffers, cache)
-
-        cache[id(self)] = result
-
-        return result
-
-    @abstractmethod
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
         ...
 
     def __add__(self, other):
@@ -101,13 +86,16 @@ class HamKaasNode(ABC):
         return SiLUNode(self)
     
     def rms_norm(self, weights: "HamKaasNode"):
-        return RMSNormNode(self, weights)
+        # (lab5/02): Your code here.
+        pass
 
     def complex_hadamard_product(self, other: "HamKaasNode"):
-        return ComplexHadamardProductNode(self, other)
+        # (lab5/02): Your code here.
+        pass
 
     def sliced_softmax(self, prefix_size: int):
-        return SlicedSoftmaxNode(self, prefix_size)
+        # (lab5/02): Your code here.
+        pass
 
 
 class InputTensor(HamKaasNode):
@@ -131,9 +119,6 @@ class InputTensor(HamKaasNode):
 
     def get_shape(self) -> List[int]:
         return self.shape
-    
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return inputs[self.name]
 
     def get_name(self) -> str:
         return self.name
@@ -159,9 +144,6 @@ class BufferTensor(HamKaasNode):
 
     def get_shape(self) -> List[int]:
         return self.shape
-    
-    def do_eval_slow(self, _: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return buffers[self.name]
 
 
 class ConstantTensor(HamKaasNode):
@@ -187,9 +169,6 @@ class ConstantTensor(HamKaasNode):
     def get_shape(self) -> List[int]:
         return list(self.tensor.shape)
     
-    def do_eval_slow(self, _1: Dict[str, torch.Tensor], _2: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return self.tensor
-    
     def get_name(self) -> str:
         return self.name
     
@@ -206,8 +185,8 @@ class SumNode(HamKaasNode):
 
         if lhs.get_type() != rhs.get_type():
             raise ValueError("Mixed-precision operations are not supported")
-        if lhs.get_type() not in [torch.float32, torch.float64]:
-            raise ValueError("Sum is supported for float32 and float64 tensors only")
+        if lhs.get_type() != torch.float32:
+            raise ValueError("Sum is supported for float32 tensors only")
 
         if len(lhs.get_shape()) != len(rhs.get_shape()):
             raise ValueError(f"Shapes do not match for addition: {lhs.get_shape()} vs {rhs.get_shape()}")
@@ -225,9 +204,6 @@ class SumNode(HamKaasNode):
     
     def get_shape(self) -> List[int]:
         return self.lhs.get_shape()
-    
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return self.lhs.eval_slow(inputs, buffers, cache) + self.rhs.eval_slow(inputs, buffers, cache)
 
 
 class MatMulNode(HamKaasNode):
@@ -236,8 +212,8 @@ class MatMulNode(HamKaasNode):
 
         if lhs.get_type() != rhs.get_type():
             raise ValueError("Mixed-precision operations are not supported")
-        if lhs.get_type() not in [torch.float32, torch.float64]:
-            raise ValueError("Matrix multiplication is supported for float32 and float64 tensors only")
+        if lhs.get_type() != torch.float32:
+            raise ValueError("Matrix multiplication is supported for float32 tensors only")
 
         lhs_shape = lhs.get_shape()
         if len(lhs_shape) == 1:
@@ -270,16 +246,13 @@ class MatMulNode(HamKaasNode):
         elif len(self.lhs.get_shape()) == 3:
             return [self.lhs.get_shape()[0], self.lhs.get_shape()[1], self.rhs.get_shape()[2]]
 
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return torch.matmul(self.lhs.eval_slow(inputs, buffers, cache), self.rhs.eval_slow(inputs, buffers, cache))
-
 
 class ReLUNode(HamKaasNode):
     def __init__(self, input: HamKaasNode):
         super().__init__()
 
-        if input.get_type() not in [torch.float32, torch.float64]:
-            raise ValueError("Only float32 and float64 tensors are supported for ReLU")
+        if input.get_type() != torch.float32:
+            raise ValueError("Only float32 tensors are supported for ReLU")
 
         self.input = input
 
@@ -288,17 +261,14 @@ class ReLUNode(HamKaasNode):
     
     def get_shape(self) -> List[int]:
         return self.input.get_shape()
-
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return self.input.eval_slow(inputs, buffers, cache).clamp(min=0)    
 
 
 class SiLUNode(HamKaasNode):
     def __init__(self, input: HamKaasNode):
         super().__init__()
 
-        if input.get_type() not in [torch.float32, torch.float64]:
-            raise ValueError("Only float32 and float64 tensors are supported for SiLU")
+        if input.get_type() != torch.float32:
+            raise ValueError("Only float32 tensors are supported for SiLU")
 
         self.input = input
 
@@ -307,18 +277,14 @@ class SiLUNode(HamKaasNode):
     
     def get_shape(self) -> List[int]:
         return self.input.get_shape()
-    
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        f = torch.nn.SiLU()
-        return f(self.input.eval_slow(inputs, buffers, cache))
 
 
 class SliceNode(HamKaasNode):
     def __init__(self, input: HamKaasNode, start: Optional[int] = None, end: Optional[int] = None):
         super().__init__()
 
-        if input.get_type() not in [torch.float32, torch.float64]:
-            raise ValueError("Only float32 and float64 tensors are supported for slicing")
+        if input.get_type() != torch.float32:
+            raise ValueError("Only float32 tensors are supported for slicing")
 
         self.input = input
 
@@ -343,54 +309,14 @@ class SliceNode(HamKaasNode):
     
     def get_shape(self) -> List[int]:
         return [self.end - self.start] + self.input.get_shape()[1:]
-    
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return self.input.eval_slow(inputs, buffers, cache)[self.start:self.end]
-  
 
-class RMSNormNode(HamKaasNode):
-    def __init__(self, input: HamKaasNode, weights: HamKaasNode):
-        super().__init__()
-
-        if input.get_type() != weights.get_type():
-            raise ValueError("Mixed-precision operations are not supported")
-        if len(input.get_shape()) != 1 or len(weights.get_shape()) != 1:
-            raise ValueError("Only vectors are supported for RMSNorm")
-        if input.get_shape()[0] != weights.get_shape()[0]:
-            raise ValueError(f"Shapes do not match for RMSNorm: {input.get_shape()} vs {weights.get_shape()}")
-
-        self.input = input
-        self.weights = weights
-
-    def get_type(self) -> torch.dtype:
-        return self.input.get_type()
-    
-    def get_shape(self) -> List[int]:
-        return self.input.get_shape()
-
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        x = self.input.eval_slow(inputs, buffers, cache)
-        weight = self.weights.eval_slow(inputs, buffers, cache)
-        out = torch.zeros_like(x)
-        size = len(x)
-        # calculate sum of squares
-        ss = 0.0
-        for j in range(size):
-            ss += x[j] * x[j]
-        ss /= size
-        ss += 1e-5
-        ss = 1.0 / math.sqrt(ss)
-        # normalize and scale
-        for j in range(size):
-            out[j] = weight[j] * (ss * x[j])
-        return out
 
 class ReshapeNode(HamKaasNode):
     def __init__(self, input: HamKaasNode, shape: List[int]):
         super().__init__()
 
-        if input.get_type() not in [torch.float32, torch.float64]:
-            raise ValueError("Only float32 and float64 tensors are supported for reshape")
+        if input.get_type() != torch.float32:
+            raise ValueError("Only float32 tensors are supported for reshape")
 
         lhs_elements = 1
         for i in range(len(input.get_shape())):
@@ -412,42 +338,6 @@ class ReshapeNode(HamKaasNode):
     def get_shape(self) -> List[int]:
         return self.shape
     
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return self.input.eval_slow(inputs, buffers, cache).reshape(self.shape)
-    
-
-class ComplexHadamardProductNode(HamKaasNode):
-    def __init__(self, lhs: HamKaasNode, rhs: HamKaasNode):
-        super().__init__()
-
-        if lhs.get_type() != rhs.get_type():
-            raise ValueError("Mixed-precision operations are not supported")
-        if len(lhs.get_shape()) != len(rhs.get_shape()):
-            raise ValueError("Shapes do not match for complex Hadamard product")
-        if lhs.get_shape()[-1] != 2 or rhs.get_shape()[-1] != 2:
-            raise ValueError("Complex dot product requires complex vectors")
-        for i in range(len(lhs.get_shape()) - 1):
-            if lhs.get_shape()[i] != rhs.get_shape()[i] and rhs.get_shape()[i] != 1:
-                raise ValueError("Shapes do not match for complex Hadamard product")
-
-        self.lhs = lhs
-        self.rhs = rhs
-
-    def get_type(self) -> torch.dtype:
-        return self.lhs.get_type()
-    
-    def get_shape(self) -> List[int]:
-        return self.lhs.get_shape()
-    
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        x = self.lhs.eval_slow(inputs, buffers, cache)
-        y = self.rhs.eval_slow(inputs, buffers, cache)
-        out = torch.zeros_like(x)
-        for j in range(len(x)):
-            out[j][0] = x[j][0] * y[j][0] - x[j][1] * y[j][1]
-            out[j][1] = x[j][0] * y[j][1] + x[j][1] * y[j][0]
-        return out
-
 
 class HadamardProductNode(HamKaasNode):
     def __init__(self, lhs: HamKaasNode, rhs: HamKaasNode):
@@ -470,16 +360,13 @@ class HadamardProductNode(HamKaasNode):
     def get_shape(self) -> List[int]:
         return self.lhs.get_shape()
     
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return self.lhs.eval_slow(inputs, buffers, cache) * self.rhs.eval_slow(inputs, buffers, cache)
-    
 
 class PermuteNode(HamKaasNode):
     def __init__(self, input: HamKaasNode, permutation: List[int]):
         super().__init__()
 
-        if input.get_type() not in [torch.float32, torch.float64]:
-            raise ValueError("Only float32 and float64 tensors are supported for permutation")
+        if input.get_type() != torch.float32:
+            raise ValueError("Only float32 tensors are supported for permutation")
         if len(input.get_shape()) != len(permutation):
             raise ValueError("Permutation must have the same length as the input shape")
         if set(permutation) != set(range(len(input.get_shape()))):
@@ -493,9 +380,6 @@ class PermuteNode(HamKaasNode):
     
     def get_shape(self) -> List[int]:
         return [self.input.get_shape()[i] for i in self.permutation]
-    
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        return self.input.eval_slow(inputs, buffers, cache).permute(self.permutation)
 
 
 class ReplaceSliceNode(HamKaasNode):
@@ -526,57 +410,7 @@ class ReplaceSliceNode(HamKaasNode):
     
     def get_shape(self) -> List[int]:
         return self.input.get_shape()
-    
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        x = self.input.eval_slow(inputs, buffers, cache)
-        y = self.replacement.eval_slow(inputs, buffers, cache)
 
-        start = self.start.eval_slow(inputs, buffers, cache).item()
-        end = self.end.eval_slow(inputs, buffers, cache).item()
-        x[start:end] = y
-        return x
-
-
-class SlicedSoftmaxNode(HamKaasNode):
-    def __init__(self, input: HamKaasNode, prefix_size: Union[int, HamKaasNode]):
-        super().__init__()
-
-        if input.get_type() not in [torch.float32, torch.float64]:
-            raise ValueError("Only float32 and float64 tensors are supported for sliced softmax")
-        if isinstance(prefix_size, int):
-            prefix_size = ConstantTensor(torch.tensor([prefix_size], dtype=torch.int64))
-        if prefix_size.get_type() != torch.int64:
-            raise ValueError("Prefix size must be of type int64")
-        if prefix_size.get_shape() != [1]:
-            raise ValueError("Prefix size must be a scalar")
-        
-        self.prefix_size = prefix_size
-        self.input = input
-
-    def get_type(self) -> torch.dtype:
-        return self.input.get_type()
-
-    def get_shape(self) -> List[int]:
-        return self.input.get_shape()
-    
-    def do_eval_slow(self, inputs: Dict[str, torch.Tensor], buffers: Dict[str, torch.Tensor], cache: Dict[int, torch.Tensor]) -> torch.Tensor:
-        x = self.input.eval_slow(inputs, buffers, cache).clone()
-        size = self.prefix_size.eval_slow(inputs, buffers, cache).item()
-        xs = [x[i].item() for i in range(size)]
-        # find max value (for numerical stability)
-        max_val = xs[0]
-        for i in range(1, size):
-            if xs[i] > max_val:
-                max_val = xs[i]
-        # exp and sum
-        exp_sum = 0.0
-        for i in range(size):
-            xs[i] = math.exp(xs[i] - max_val)
-            exp_sum += xs[i]
-        # normalize
-        for i in range(size):
-            x[i] = xs[i] / exp_sum
-        return x
 
 @dataclass
 class TraversalResult:
@@ -629,6 +463,9 @@ def traverse_node(node: HamKaasNode) -> TraversalResult:
             result.constants[node.get_name()] = node.get_tensor()
             node_type = str(node.get_type()).removeprefix("torch.")
             return register_node(f"ConstantTensor({node.get_name()}, {node_type}, {node.get_shape()})")
+        elif isinstance(node, BufferTensor):
+            node_type = str(node.get_type()).removeprefix("torch.")
+            return register_node(f"BufferTensor({node_type}, {node.get_shape()})")
         elif isinstance(node, SumNode):
             return register_node(f"SumNode(${run(node.lhs)}, ${run(node.rhs)})")
         elif isinstance(node, MatMulNode):
@@ -639,23 +476,14 @@ def traverse_node(node: HamKaasNode) -> TraversalResult:
             return register_node(f"SiLUNode(${run(node.input)})")
         elif isinstance(node, SliceNode):
             return register_node(f"SliceNode(${run(node.input)}, {node.start}, {node.end})")
-        elif isinstance(node, RMSNormNode):
-            return register_node(f"RMSNormNode(${run(node.input)}, ${run(node.weights)})")
         elif isinstance(node, ReshapeNode):
             return register_node(f"ReshapeNode(${run(node.input)}, {node.shape})")
-        elif isinstance(node, ComplexHadamardProductNode):
-            return register_node(f"ComplexHadamardProductNode(${run(node.lhs)}, ${run(node.rhs)})")
         elif isinstance(node, HadamardProductNode):
             return register_node(f"HadamardProductNode(${run(node.lhs)}, ${run(node.rhs)})")
         elif isinstance(node, PermuteNode):
             return register_node(f"PermuteNode(${run(node.input)}, {node.permutation})")
         elif isinstance(node, ReplaceSliceNode):
             return register_node(f"ReplaceSliceNode(${run(node.input)}, ${run(node.replacement)}, ${run(node.start)}, ${run(node.end)})")
-        elif isinstance(node, SlicedSoftmaxNode):
-            return register_node(f"SlicedSoftmaxNode(${run(node.input)}, ${run(node.prefix_size)})")
-        elif isinstance(node, BufferTensor):
-            node_type = str(node.get_type()).removeprefix("torch.")
-            return register_node(f"BufferTensor({node_type}, {node.get_shape()})")
         else:
             raise ValueError(f"Unsupported node type: {type(node)}")
     output = run(node)
@@ -694,76 +522,15 @@ class HamKaasPlugin:
     def __init__(self, hamkaas_path: str) -> None:
         self.lib = ctypes.CDLL(hamkaas_path)
 
-        self.lib.HamKaasFreeErrorMessage.argtypes = [
-            ctypes.POINTER(ctypes.c_ubyte),
-        ]
-        self.lib.HamKaasFreeErrorMessage.restype = None
-
-        self.lib.HamKaasInitialize.argtypes = []
-        self.lib.HamKaasInitialize.restype = HamKaasPlugin.InitializationResult
-
-        self.lib.HamKaasFinalize.argtypes = [
-            ctypes.c_void_p, # handle
-        ]
-        self.lib.HamKaasFinalize.restype = None
-
-        self.lib.HamKaasInverseElements.restype = ctypes.POINTER(ctypes.c_ubyte)
-        self.lib.HamKaasInverseElements.argtypes = [
-            ctypes.POINTER(ctypes.c_float), # input
-            ctypes.POINTER(ctypes.c_float), # output
-            ctypes.c_int, # size
-        ]
-
-        self.lib.HamKaasCompileModel.argtypes = [
-            ctypes.c_void_p, # handle
-            HamKaasPlugin.CompilationOptions, # options
-            ctypes.c_char_p, # scriptString
-            ctypes.POINTER(HamKaasPlugin.NamedTensor), # constantTensors
-            ctypes.c_int, # constantTensorCount
-        ]
-        self.lib.HamKaasCompileModel.restype = HamKaasPlugin.CompilationResult
-
-        self.lib.HamKaasFreeModel.argtypes = [
-            ctypes.c_void_p, # handle
-            ctypes.c_void_p, # model
-        ]
-        self.lib.HamKaasFreeModel.restype = None
-
-        self.lib.HamKaasEvaluateModel.argtypes = [
-            ctypes.c_void_p, # handle
-            ctypes.c_void_p, # model
-            ctypes.POINTER(HamKaasPlugin.NamedTensor), # inputTensors
-            ctypes.c_int, # inputTensorCount
-            ctypes.c_void_p, # outputTensor
-        ]
-        self.lib.HamKaasEvaluateModel.restype = ctypes.POINTER(ctypes.c_ubyte)
-
-        result = self.lib.HamKaasInitialize()
-        if result.error:
-            error = ctypes.string_at(result.error).decode()
-            self.lib.HamKaasFreeErrorMessage(result.error)
-            raise RuntimeError(error)
-        self.handle = result.handle
+        # (lab4/01): Your code here.
 
     def __del__(self) -> None:
         if self.lib:
             self.lib.HamKaasFinalize(self.handle)
 
     def inverse_elements(self, input: torch.tensor) -> torch.tensor:
-        if input.dtype != torch.float32:
-            raise ValueError("Only float32 tensors are supported for inverse_elements")
-        
-        output = torch.zeros_like(input)
-        input_ptr = ctypes.cast(input.data_ptr(), ctypes.POINTER(ctypes.c_float))
-        output_ptr = ctypes.cast(output.data_ptr(), ctypes.POINTER(ctypes.c_float))
-
-        result_ptr = self.lib.HamKaasInverseElements(input_ptr, output_ptr, torch.numel(input))
-        if result_ptr:
-            error = ctypes.string_at(result_ptr).decode()
-            self.lib.HamKaasFreeErrorMessage(result_ptr)
-            raise RuntimeError(error)
-
-        return output
+        # (lab4/01): Your code here.
+        pass
     
     def compile_model(self, node: HamKaasNode, use_gpu=False, use_cudnn=False) -> "HamKaasModel":
         traveral_result = traverse_node(node)
@@ -777,18 +544,9 @@ class HamKaasPlugin:
 
         options = HamKaasPlugin.CompilationOptions(use_gpu=use_gpu, use_cudnn=use_cudnn)
 
-        compilation_result = self.lib.HamKaasCompileModel(
-            self.handle,
-            options,
-            traveral_result.script.encode("utf-8"),
-            (HamKaasPlugin.NamedTensor * len(named_tensors))(*named_tensors),
-            len(named_tensors),
-        )
+        compilation_result = None
 
-        if compilation_result.error:
-            error = ctypes.string_at(compilation_result.error).decode()
-            self.lib.HamKaasFreeErrorMessage(compilation_result.error)
-            raise RuntimeError(error)
+        # (lab4/01): Your code here: compile model and handle errors if any.
 
         return HamKaasModel(self, compilation_result.model, traveral_result.inputs, traveral_result.output)
 
@@ -801,6 +559,7 @@ class HamKaasModel:
         self._output = output
 
     def __del__(self) -> None:
+        # (lab4/01): Your code here: free model.
         self._plugin.lib.HamKaasFreeModel(self._plugin.handle, self._model_ptr)
 
     def evaluate(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -826,17 +585,6 @@ class HamKaasModel:
         output_tensor = torch.zeros(self._output.shape, dtype=self._output.type)
         output_tensor_ptr = ctypes.cast(output_tensor.data_ptr(), ctypes.c_void_p)
 
-        error_ptr = self._plugin.lib.HamKaasEvaluateModel(
-            self._plugin.handle,
-            self._model_ptr,
-            (HamKaasPlugin.NamedTensor * len(named_tensors))(*named_tensors),
-            len(named_tensors),
-            output_tensor_ptr,
-        )
-
-        if error_ptr:
-            error = ctypes.string_at(error_ptr).decode()
-            self._plugin.lib.HamKaasFreeErrorMessage(error_ptr)
-            raise RuntimeError(error)
+        # (lab4/01): Your code here: evaluate model and handle errors if any.
 
         return output_tensor

@@ -207,30 +207,12 @@ TNodeBasePtr ParseScript(const std::string& script)
             auto end = parseInt();
 
             node = std::make_shared<TSliceNode>(std::move(input), begin, end);
-        } else if (nodeType == "RMSNormNode") {
-            auto input = parseNodeRef();
-            skip(',');
-            auto weights = parseNodeRef();
-
-            node = std::make_shared<TRmsNormNode>(std::move(input), std::move(weights));
         } else if (nodeType == "ReshapeNode") {
             auto input = parseNodeRef();
             skip(',');
             auto shape = parseIntList();
 
             node = std::make_shared<TReshapeNode>(std::move(input), std::move(shape));
-        } else if (nodeType == "ComplexHadamardProductNode") {
-            auto lhs = parseNodeRef();
-            skip(',');
-            auto rhs = parseNodeRef();
-
-            node = std::make_shared<TComplexHadamardProductNode>(std::move(lhs), std::move(rhs));
-        } else if (nodeType == "HadamardProductNode") {
-            auto lhs = parseNodeRef();
-            skip(',');
-            auto rhs = parseNodeRef();
-
-            node = std::make_shared<THadamardProductNode>(std::move(lhs), std::move(rhs));
         } else if (nodeType == "PermuteNode") {
             auto input = parseNodeRef();
             skip(',');
@@ -247,12 +229,6 @@ TNodeBasePtr ParseScript(const std::string& script)
             auto end = parseNodeRef();
 
             node = std::make_shared<TReplaceSliceNode>(std::move(input), std::move(replacement), std::move(begin), std::move(end));
-        } else if (nodeType == "SlicedSoftmaxNode") {
-            auto input = parseNodeRef();
-            skip(',');
-            auto prefixSize = parseNodeRef();
-
-            node = std::make_shared<TSlicedSoftmaxNode>(std::move(input), std::move(prefixSize));
         } else {
             THROW("Unknown node type", VAR(nodeType));
         }
