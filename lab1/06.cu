@@ -4,9 +4,42 @@
 #include <iostream>
 #include <vector>
 
+template <int KernelSize, int BlockDimensionSize>
+__global__ void MaxPoolingKernel(double* input, double* output, int n, int m)
+{
+    // Write your code here.
+}
+
 std::vector<std::vector<double>> MaxPoolingGpu(std::vector<std::vector<double>> input)
 {
-    // Your code here.
+    int n = input.size();
+    int m = input[0].size();
+
+    double* gpuInput;
+    double* gpuOutput;
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuInput, n * m * sizeof(double)));
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuOutput, n * m * sizeof(double)));
+
+    for (int i = 0; i < n; i++) {
+        CUDA_CHECK_ERROR(cudaMemcpy(gpuInput + i * m, input[i].data(), m * sizeof(double), cudaMemcpyHostToDevice));
+    }
+
+    constexpr int KernelSize = 4;
+    constexpr int BlockDimensionSize = 16;
+
+    dim3 blocks((n + BlockDimensionSize - 1) / BlockDimensionSize, (m + BlockDimensionSize - 1) / BlockDimensionSize);
+    dim3 threads(BlockDimensionSize, BlockDimensionSize);
+    MaxPoolingKernel<KernelSize, BlockDimensionSize><<<blocks, threads>>>(gpuInput, gpuOutput, n, m);
+    CUDA_CHECK_KERNEL();
+
+    std::vector<std::vector<double>> output(n, std::vector<double>(m));
+    for (int i = 0; i < n; i++) {
+        CUDA_CHECK_ERROR(cudaMemcpy(output[i].data(), gpuOutput + i * m, m * sizeof(double), cudaMemcpyDeviceToHost));
+    }
+    CUDA_CHECK_ERROR(cudaFree(gpuInput));
+    CUDA_CHECK_ERROR(cudaFree(gpuOutput));
+
+    return output;
 }
 
 std::vector<std::vector<double>> MaxPoolingCpu(std::vector<std::vector<double>> data)
