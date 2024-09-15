@@ -33,3 +33,51 @@ NVIDIA Nsight is a family of profiling tools by NVIDIA that are used to investig
 NVIDIA Nsight Systems is a system-wide performance analyzer. It collects events from both CPU, GPU and GPU interconnect and puts them on a single timeline. It is useful to get a bird's eye view of the application performance and understand how wall time is distributed between different parts of the program and devices. On the other side, it does not provide detailed information about what happens inside the kernel like `perf` tool for the CPU workloads. To get a detailed view of the kernel execution, we will use another tool called NVIDIA Nsight Compute.
 
 Both of these tools have excellent documentation (see [Nsight Systems](https://docs.nvidia.com/nsight-systems/) and [Nsight Compute](https://docs.nvidia.com/nsight-compute/)). It is definitely not required to read all of it to use these tools, but it is a good idea at least to look at the list of possible options and metrics that can be collected in order to understand the limitations of these tools. Simple usages of these tools will be shown in this lab later.
+
+## 00: First steps with Nsight Systems
+
+Now it is the time to make your hands dirty and profile something. In this task you will profile program that is located in file `00.cu`.
+
+Take a look at the code. What does it do?
+
+<details>
+<summary> Answer </summary>
+
+This code does the following procedure for 10 times. Allocate a vector of 1000 numbers, do some CPU processing, then do GPU processing. For the GPU processing data is copied to GPU and vice versa.
+
+</details>
+
+Now compile the code with the following command and run the profiling.
+
+```bash
+make 00
+nsys profile -o 00.prof ./00
+```
+
+This will generate a file `00.prof.nsys-rep` with the profiling results. Download it locally if required and open it with NVIDIA Nsight Systems GUI.
+
+You will see a timeline with the CPU and GPU events. Play with it to become comfortable with the tool. Try zooming timeline in and out, clicking on the events to get detailed information. Unroll sections for the CPU and GPU and look at them.
+
+Look at the CUDA API section of the main thread. You will see alternating long `cudaMemcpy` calls and empty spaces with some other short calls.
+
+What are the empty spaces?
+
+<details>
+<summary> Answer </summary>
+
+This is a CPU processing. 
+</details>
+
+Why `cudaMemcpy` calls are so long? Processing should be longer, right?
+
+<details>
+<summary> Answer </summary>
+
+`cudaMemcpy` performs synchronization between CPU and GPU that waits until all the previous GPU operations are finished. So it includes both the real data transfer and waiting for the kernel completion.
+
+You can unroll CUDA HW section and see that most of the `cudaMemcpy` call time is spent on the GPU running kernel and only a small amount of time is spent for copying data.
+</details>
+
+Remove the body of the kernel and run profiling again. Find in the profiler that GPU time is mostly spent on host-to-device and device-to-host memory transfers.
+
+Now, let's profile the kernel. Restore the kernel body and run the following command.
