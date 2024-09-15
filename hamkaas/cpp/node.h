@@ -19,9 +19,10 @@ struct TEvaluationContext
 };
 
 class TNodeBase
+    : public std::enable_shared_from_this<TNodeBase>
 {
 public:
-    TNodeBase(TTensorMeta meta);
+    explicit TNodeBase(TTensorMeta meta, std::vector<std::shared_ptr<TNodeBase>> inputs = {});
 
     virtual ~TNodeBase() = default;
 
@@ -37,7 +38,8 @@ public:
     // Returns the list of nodes that are used as inputs for this node.
     // The order of nodes is important, inputs will be passed in this order.
     // Their outputs should be alive during evaluation.
-    virtual std::vector<TNodeBase*> GetInputs() const = 0;
+    const std::vector<std::shared_ptr<TNodeBase>>& GetInputs() const;
+    void ReplaceInput(TNodeBase* oldInput, std::shared_ptr<TNodeBase> newInput);
 
     // Memory management.
 
@@ -70,6 +72,8 @@ protected:
     const TTensorMeta Meta_;
 
     char* Output_ = nullptr;
+
+    std::vector<std::shared_ptr<TNodeBase>> Inputs_;
 };
 
 using TNodeBasePtr = std::shared_ptr<TNodeBase>;
@@ -81,8 +85,6 @@ public:
     TInputNode(std::string name, TTensorMeta meta);
 
     const std::string& GetName() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
 
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
@@ -97,8 +99,6 @@ class TBufferNode
 public:
     explicit TBufferNode(TTensorMeta meta);
 
-    std::vector<TNodeBase*> GetInputs() const override;
-
     TNodeBase* GetOutputOwner() const override;
 
     void EvaluateCpu() override;
@@ -112,8 +112,6 @@ public:
     TConstantNode(TTensorMeta meta, std::string name);
 
     const std::string& GetName() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
 
     TNodeBase* GetOutputOwner() const override;
 
@@ -130,11 +128,6 @@ class TSumNode
 public:
     TSumNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
 
-    const TNodeBasePtr& GetLhs() const;
-    const TNodeBasePtr& GetRhs() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
-
     int64_t GetBufferSize() const override;
     void SetBuffer(char* buffer) override;
 
@@ -144,9 +137,6 @@ public:
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Lhs_;
-    const TNodeBasePtr Rhs_;
-
     int64_t* LhsShape_;
     int64_t* RhsShape_;
 
@@ -165,11 +155,6 @@ class TMulNode
 public:
     TMulNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
 
-    const TNodeBasePtr& GetLhs() const;
-    const TNodeBasePtr& GetRhs() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
-
     int64_t GetBufferSize() const override;
     void SetBuffer(char* buffer) override;
 
@@ -179,9 +164,6 @@ public:
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Lhs_;
-    const TNodeBasePtr Rhs_;
-
     void** LhsMatrices_ = nullptr;
     void** RhsMatrices_ = nullptr;
     void** OutputMatrices_ = nullptr;
@@ -212,16 +194,10 @@ class TReLUNode
 public:
     explicit TReLUNode(TNodeBasePtr input);
 
-    const TNodeBasePtr& GetInput() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
-
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Input_;
-
     template <class T>
     void DoEvaluateCpu();
 
@@ -235,16 +211,10 @@ class TSiLUNode
 public:
     explicit TSiLUNode(TNodeBasePtr input);
 
-    const TNodeBasePtr& GetInput() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
-
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Input_;
-
     template <class T>
     void DoEvaluateCpu();
 
@@ -258,11 +228,8 @@ class TSliceNode
 public:
     TSliceNode(TNodeBasePtr input, int64_t begin, int64_t end);
 
-    const TNodeBasePtr& GetInput() const;
     int64_t GetBegin() const;
     int64_t GetEnd() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
 
     int64_t GetOutputSize() const override;
     TNodeBase* GetOutputOwner() const override;
@@ -273,7 +240,6 @@ public:
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Input_;
     const int64_t Begin_;
     const int64_t End_;
 
@@ -288,18 +254,10 @@ class TRmsNormNode
 public:
     explicit TRmsNormNode(TNodeBasePtr input, TNodeBasePtr weights);
 
-    const TNodeBasePtr& GetInput() const;
-    const TNodeBasePtr& GetWeights() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
-
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Input_;
-    const TNodeBasePtr Weights_;
-
     template <class T>
     void DoEvaluateCpu();
 
@@ -313,11 +271,6 @@ class TReshapeNode
 public:
     TReshapeNode(TNodeBasePtr input, std::vector<int64_t> shape);
 
-    const TNodeBasePtr& GetInput() const;
-    const std::vector<int64_t>& GetShape() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
-
     int64_t GetOutputSize() const override;
     TNodeBase* GetOutputOwner() const override;
 
@@ -327,7 +280,6 @@ public:
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Input_;
     const std::vector<int64_t> Shape_;
 
     static TTensorMeta CalculateMeta(const TTensorMeta& input, const std::vector<int64_t>& shape);
@@ -339,11 +291,6 @@ class TComplexHadamardProductNode
 public:
     TComplexHadamardProductNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
 
-    const TNodeBasePtr& GetLhs() const;
-    const TNodeBasePtr& GetRhs() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
-
     int64_t GetBufferSize() const override;
     void SetBuffer(char* buffer) override;
 
@@ -353,9 +300,6 @@ public:
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Lhs_;
-    const TNodeBasePtr Rhs_;
-
     int64_t* LhsShape_;
     int64_t* RhsShape_;
 
@@ -374,11 +318,6 @@ class THadamardProductNode
 public:
     THadamardProductNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
 
-    const TNodeBasePtr& GetLhs() const;
-    const TNodeBasePtr& GetRhs() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
-
     int64_t GetBufferSize() const override;
     void SetBuffer(char* buffer) override;
 
@@ -388,9 +327,6 @@ public:
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Lhs_;
-    const TNodeBasePtr Rhs_;
-
     int64_t* LhsShape_;
     int64_t* RhsShape_;
 
@@ -409,11 +345,6 @@ class TPermuteNode
 public:
     TPermuteNode(TNodeBasePtr input, std::vector<int64_t> permutation);
 
-    const TNodeBasePtr& GetInput() const;
-    const std::vector<int64_t>& GetPermutation() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
-
     int64_t GetBufferSize() const override;
     void SetBuffer(char* buffer) override;
 
@@ -423,7 +354,6 @@ public:
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Input_;
     const std::vector<int64_t> Permutation_;
 
     int64_t* InputShape_;
@@ -442,14 +372,11 @@ class TReplaceSliceNode
     : public TNodeBase
 {
 public:
-    TReplaceSliceNode(TNodeBasePtr input, TNodeBasePtr replacement, TNodeBasePtr begin, TNodeBasePtr end);
-
-    const TNodeBasePtr& GetInput() const;
-    const TNodeBasePtr& GetReplacement() const;
-    const TNodeBasePtr& GetBegin() const;
-    const TNodeBasePtr& GetEnd() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
+    TReplaceSliceNode(
+        TNodeBasePtr input,
+        TNodeBasePtr replacement,
+        TNodeBasePtr begin,
+        TNodeBasePtr end);
 
     int64_t GetOutputSize() const override;
     TNodeBase* GetOutputOwner() const override;
@@ -460,11 +387,6 @@ public:
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Input_;
-    const TNodeBasePtr Replacement_;
-    const TNodeBasePtr Begin_;
-    const TNodeBasePtr End_;
-
     template <class T>
     void DoEvaluateGpu(const TEvaluationContext& context);
 };
@@ -475,18 +397,10 @@ class TSlicedSoftmaxNode
 public:
     TSlicedSoftmaxNode(TNodeBasePtr input, TNodeBasePtr prefixSize);
 
-    const TNodeBasePtr& GetInput() const;
-    const TNodeBasePtr& GetPrefixSize() const;
-
-    std::vector<TNodeBase*> GetInputs() const override;
-
     void EvaluateCpu() override;
     void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
-    const TNodeBasePtr Input_;
-    const TNodeBasePtr PrefixSize_;
-
     template <class T>
     void DoEvaluateCpu();
 

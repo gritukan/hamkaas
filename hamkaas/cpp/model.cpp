@@ -119,7 +119,7 @@ void TModel::Evaluate(
 
 void TModel::BuildEvaluationOrder()
 {
-    std::unordered_set<TNodeBase*> visited;
+    std::unordered_set<const TNodeBase*> visited;
     std::function<void(TNodeBase*)> dfs = [&] (TNodeBase* node) -> void {
         if (visited.count(node)) {
             return;
@@ -127,7 +127,7 @@ void TModel::BuildEvaluationOrder()
         visited.insert(node);
 
         for (const auto& input : node->GetInputs()) {
-            dfs(input);
+            dfs(input.get());
         }
 
         // Input nodes are kinda special in terms of memory management
@@ -148,7 +148,8 @@ void TModel::AllocateMemory()
     // the memory for its output can be freed.
     std::unordered_map<TNodeBase*, TNodeBase*> lastNodeOccurence;
     for (auto* node : EvaluationOrder_) {
-        for (auto* input : node->GetInputs()) {
+        for (auto inputPtr : node->GetInputs()) {
+            auto* input = inputPtr.get();
             // Input node may not be the owner of the output.
             // Let's find the real owner.
             while (input && input->GetOutputOwner() != input) {
