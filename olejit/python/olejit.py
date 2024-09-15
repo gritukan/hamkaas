@@ -195,7 +195,6 @@ def create_script(node: OlejitNode) -> OlejitScript:
         elif isinstance(node, SumNode):
             lhs_index = run(node.lhs)
             rhs_index = run(node.rhs)
-            index = get_index()
             return register_node(f"SumNode({lhs_index}, {rhs_index})")
         elif isinstance(node, MulNode):
             lhs_index = run(node.lhs)
@@ -210,6 +209,6 @@ def create_script(node: OlejitNode) -> OlejitScript:
         else:
             raise ValueError(f"Unsupported node type: {type(node)}")
     output = run(node)
-    result.script += f"return {output};\n"
+    result.script += f"result = {output};\n"
 
     return result
