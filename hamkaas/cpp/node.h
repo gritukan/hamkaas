@@ -1,7 +1,10 @@
+#pragma once
+
 #include "tensor.h"
 
 #include <string>
 #include <memory>
+#include <unordered_map>
 
 class TNodeBase
 {
@@ -15,6 +18,11 @@ public:
     EValueType GetValueType() const;
     int GetDimensions() const;
     const std::vector<int>& GetShape() const;
+    int GetElementCount() const;
+    int GetElementSize() const;
+    int GetCapacity() const;
+
+    virtual std::vector<char> EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const = 0;
 
 private:
     const TTensorMeta Meta_;
@@ -30,6 +38,8 @@ public:
 
     const std::string& GetName() const;
 
+    std::vector<char> EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const override;
+
 private:
     const std::string Name_;
 };
@@ -38,7 +48,11 @@ class TConstantNode
     : public TNodeBase
 {
 public:
-    TConstantNode(TTensorMeta meta, void* data);
+    TConstantNode(TTensorMeta meta, const void* data);
+
+    const void* GetData() const;
+
+    std::vector<char> EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const override;
 
 private:
     const void* Data_;
@@ -52,6 +66,8 @@ public:
 
     const TNodeBasePtr& GetLhs() const;
     const TNodeBasePtr& GetRhs() const;
+
+    std::vector<char> EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const override;
 
 private:
     const TNodeBasePtr Lhs_;
@@ -69,6 +85,8 @@ public:
     const TNodeBasePtr& GetLhs() const;
     const TNodeBasePtr& GetRhs() const;
 
+    std::vector<char> EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const override;
+
 private:
     const TNodeBasePtr Lhs_;
     const TNodeBasePtr Rhs_;
@@ -80,9 +98,11 @@ class TReLUNode
     : public TNodeBase
 {
 public:
-    TReLUNode(TNodeBasePtr input);
+    explicit TReLUNode(TNodeBasePtr input);
 
     const TNodeBasePtr& GetInput() const;
+
+    std::vector<char> EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const override;
 
 private:
     const TNodeBasePtr Input_;
@@ -92,9 +112,11 @@ class TSiLUNode
     : public TNodeBase
 {
 public:
-    TSiLUNode(TNodeBasePtr input);
+    explicit TSiLUNode(TNodeBasePtr input);
 
     const TNodeBasePtr& GetInput() const;
+
+    std::vector<char> EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const override;
 
 private:
     const TNodeBasePtr Input_;

@@ -2,8 +2,9 @@ from abc import ABC, abstractmethod
 
 from dataclasses import dataclass
 
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
+import ctypes
 import torch
 
 # For now, we support only these types for hamkaas.
@@ -62,12 +63,13 @@ class ConstantTensor(HamkaasNode):
         tensor = tensor.contiguous()
 
         self.tensor = tensor
+        self.name = name
 
     def get_type(self) -> torch.dtype:
         return self.tensor.dtype
 
     def get_shape(self) -> List[int]:
-        return self.tensor.shape
+        return list(self.tensor.shape)
     
     def get_name(self) -> str:
         return self.name
@@ -88,7 +90,7 @@ class SumNode(HamkaasNode):
 
         # If one of the rhs dimensions is 1 and the other is not, broadcast is done.
         for i in range(len(lhs.get_shape())):
-            if lhs.get_shape()[i] != rhs.get_shape()[i] and lhs.get_shape()[i] != 1:
+            if lhs.get_shape()[i] != rhs.get_shape()[i] and rhs.get_shape()[i] != 1:
                 raise ValueError(f"Shapes do not match for addition: {lhs.get_shape()} vs {rhs.get_shape()}")
 
         self.lhs = lhs
@@ -162,17 +164,12 @@ def create_script(node: HamkaasNode) -> HamkaasScript:
 
     node_to_index = {}
 
-    next_constant_tensor_id = 0
-
     def run(node: HamkaasNode) -> int:
+        global next_constant_tensor_id
+
         if id(node) in node_to_index:
             return node_to_index[id(node)]
-
-        def get_index():
-            index = len(node_to_index) + 1
-            node_to_index[id(node)] = index
-            return index
-        
+       
         def register_node(expr: str) -> int:
             index = len(node_to_index) + 1
             node_to_index[id(node)] = index
@@ -180,18 +177,21 @@ def create_script(node: HamkaasNode) -> HamkaasScript:
             return index
 
         if isinstance(node, InputTensor):
-            return register_node(f"InputTensor({node.get_name()}, {node.get_type()}, {node.get_shape()})")
+            node_type = str(node.get_type()).removeprefix("torch.")
+            return register_node(f"InputTensor({node.get_name()}, {node_type}, {node.get_shape()})")
         elif isinstance(node, ConstantTensor):
             if node.get_name():
                 if node.get_name() in result.constants:
                     raise ValueError(f"Multiple constant tensors with name {node.get_name()} were found")
             else:
+                next_constant_tensor_id = 0
                 while "constant_" + str(next_constant_tensor_id) in result.constants:
                     next_constant_tensor_id += 1
                 node.set_name("constant_" + str(next_constant_tensor_id))
 
             result.constants[node.get_name()] = node.get_tensor()
-            return register_node(f"ConstantTensor({node.get_name()}, {node.get_type()}, {node.get_shape()})")
+            node_type = str(node.get_type()).removeprefix("torch.")
+            return register_node(f"ConstantTensor({node.get_name()}, {node_type}, {node.get_shape()})")
         elif isinstance(node, SumNode):
             lhs_index = run(node.lhs)
             rhs_index = run(node.rhs)
@@ -212,3 +212,111 @@ def create_script(node: HamkaasNode) -> HamkaasScript:
     result.script += f"result = {output};\n"
 
     return result
+
+
+class HamkaasLibrary:
+    class CompilationResult(ctypes.Structure):
+        _fields_ = [
+            ("model", ctypes.c_void_p),
+            ("error", ctypes.POINTER(ctypes.c_ubyte)),
+        ]
+
+    class NamedTensor(ctypes.Structure):
+        _fields_ = [
+            ("name", ctypes.c_char_p),
+            ("data", ctypes.c_void_p),
+        ]
+
+    def __init__(self, hamkaas_path: str) -> None:
+        self.lib = ctypes.CDLL(hamkaas_path)
+
+        self.lib.CompileModel.argtypes = [
+            ctypes.c_char_p, # scriptString
+            ctypes.POINTER(HamkaasLibrary.NamedTensor), # constantTensors
+            ctypes.c_int, # constantTensorCount
+        ]
+        self.lib.CompileModel.restype = HamkaasLibrary.CompilationResult
+
+        self.lib.FreeModel.argtypes = [
+            ctypes.c_void_p, # model
+        ]
+        self.lib.FreeModel.restype = None
+
+        self.lib.EvaluateModel.argtypes = [
+            ctypes.c_void_p, # model
+            ctypes.POINTER(HamkaasLibrary.NamedTensor), # inputTensors
+            ctypes.c_int, # inputTensorCount
+            ctypes.c_void_p, # outputTensor
+        ]
+        self.lib.EvaluateModel.restype = ctypes.POINTER(ctypes.c_ubyte)
+
+_HAMKAAS_LIBRARY = None
+
+def initialize(hamkaas_path: str) -> None:
+    global _HAMKAAS_LIBRARY
+    _HAMKAAS_LIBRARY = HamkaasLibrary(hamkaas_path)
+
+class HamkaasModel:
+    def __init__(self, model_ptr: int, output_shape: List[int], output_type: torch.dtype) -> None:
+        if _HAMKAAS_LIBRARY is None:
+            raise ValueError("Hamkaas library is not initialized")
+
+        self._model_ptr = model_ptr
+        self._output_shape = output_shape
+        self._output_type = output_type
+
+    def evaluate(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
+        if _HAMKAAS_LIBRARY is None:
+            raise ValueError("Hamkaas library is not initialized")
+
+        named_tensors = [
+            HamkaasLibrary.NamedTensor(
+                name.encode("utf-8"),
+                tensor.data_ptr(),
+            )
+            for name, tensor in inputs.items()
+        ]
+
+        output_tensor = torch.zeros(self._output_shape, dtype=self._output_type)
+        output_tensor_ptr = ctypes.cast(output_tensor.data_ptr(), ctypes.c_void_p)
+
+        error_ptr = _HAMKAAS_LIBRARY.lib.EvaluateModel(
+            self._model_ptr,
+            (HamkaasLibrary.NamedTensor * len(named_tensors))(*named_tensors),
+            len(named_tensors),
+            output_tensor_ptr,
+        )
+
+        if error_ptr:
+            error = ctypes.string_at(error_ptr).decode()
+            _HAMKAAS_LIBRARY.lib.FreeErrorMessage(error_ptr)
+            raise RuntimeError(error)
+
+        return output_tensor
+
+def compile_model(node: HamkaasNode) -> None:
+    if _HAMKAAS_LIBRARY is None:
+        raise ValueError("Hamkaas library is not initialized")
+
+    script = create_script(node)
+    named_tensors = [
+        HamkaasLibrary.NamedTensor(
+            name.encode("utf-8"),
+            tensor.data_ptr(),
+        )
+        for name, tensor in script.constants.items()
+    ]
+
+    compilation_result = _HAMKAAS_LIBRARY.lib.CompileModel(
+        script.script.encode("utf-8"),
+        (HamkaasLibrary.NamedTensor * len(named_tensors))(*named_tensors),
+        len(named_tensors),
+    )
+
+    if compilation_result.error:
+        print(compilation_result.error)
+        error = ctypes.string_at(compilation_result.error).decode()
+        _HAMKAAS_LIBRARY.lib.FreeErrorMessage(compilation_result.error)
+        raise RuntimeError(error)
+
+    return HamkaasModel(compilation_result.model, node.get_shape(), node.get_type())

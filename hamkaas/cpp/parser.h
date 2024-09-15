@@ -9,7 +9,7 @@ struct TScript
 {
     std::string Script;
 
-    std::unordered_map<std::string, void*> Constants;
+    std::unordered_map<std::string, const void*> Constants;
 };
 
 TNodeBasePtr ParseScript(const TScript& script);

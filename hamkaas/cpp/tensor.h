@@ -1,3 +1,5 @@
+#pragma once
+
 #include <vector>
 
 constexpr int MaxDimensions = 3;
@@ -17,4 +19,28 @@ struct TTensorMeta
     std::vector<int> Shape;
 
     int GetDimensions() const;
+    int GetElementCount() const;
+    int GetElementSize() const;
+    int GetCapacity() const;
+};
+
+class TTensor
+{
+public:
+    TTensor(TTensorMeta meta, void* data);
+
+    const TTensorMeta& GetMeta() const;
+    EValueType GetValueType() const;
+    int GetDimensions() const;
+    const std::vector<int>& GetShape() const;
+    int GetElementCount() const;
+    int GetElementSize() const;
+    int GetCapacity() const;
+
+    const void* GetData() const;
+    void* GetData();
+
+private:
+    TTensorMeta Meta_;
+    void* Data_;
 };

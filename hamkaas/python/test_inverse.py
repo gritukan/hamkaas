@@ -22,4 +22,3 @@ x = torch.tensor([[0, 2], [3, 4]], dtype=torch.float32)
 inverser = Inverser("../cpp/libhamkaas.so")
 
 print(inverser.inverse(x))
-

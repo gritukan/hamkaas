@@ -114,12 +114,15 @@ TNodeBasePtr ParseScript(const TScript& script)
             }
         };
 
-        const std::string Result = "Result";
+        const std::string Result = "result";
         if (expression.substr(0, Result.size()) == Result) {
             ptr += Result.size();
             skip('=');
             outputNodeIndex = parseInt();
-            skip(':');
+            if (ptr < expression.size()) {
+                throw std::runtime_error("Unexpected symbols after the end of expression");
+            }
+
             continue;
         }
 
@@ -168,7 +171,7 @@ TNodeBasePtr ParseScript(const TScript& script)
                 throw std::runtime_error("Expression references unknown node");
             }
 
-            node = std::make_shared<TSumNode>(*lhsIt, *rhsIt);
+            node = std::make_shared<TSumNode>(lhsIt->second, rhsIt->second);
         } else if (nodeType == "MulNode") {
             auto lhs = parseInt();
             skip(',');
@@ -180,7 +183,7 @@ TNodeBasePtr ParseScript(const TScript& script)
                 throw std::runtime_error("Expression references unknown node");
             }
 
-            node = std::make_shared<TMulNode>(*lhsIt, *rhsIt);
+            node = std::make_shared<TMulNode>(lhsIt->second, rhsIt->second);
         } else if (nodeType == "ReLUNode") {
             auto input = parseInt();
 
@@ -189,7 +192,7 @@ TNodeBasePtr ParseScript(const TScript& script)
                 throw std::runtime_error("Expression references unknown node");
             }
 
-            node = std::make_shared<TReLUNode>(*inputIt);
+            node = std::make_shared<TReLUNode>(inputIt->second);
         } else if (nodeType == "SiLUNode") {
             auto input = parseInt();
 
@@ -198,9 +201,15 @@ TNodeBasePtr ParseScript(const TScript& script)
                 throw std::runtime_error("Expression references unknown node");
             }
 
-            node = std::make_shared<TSiLUNode>(*inputIt);
+            node = std::make_shared<TSiLUNode>(inputIt->second);
         } else {
             throw std::runtime_error("Unknown node type: " + nodeType);
+        }
+
+        skip(')');
+
+        if (ptr < expression.size()) {
+            throw std::runtime_error("Unexpected symbols after the end of expression");
         }
 
         if (!nodes.emplace(outputNodeIndex, node).second) {
