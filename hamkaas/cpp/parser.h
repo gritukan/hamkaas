@@ -5,6 +5,8 @@
 #include <string>
 #include <unordered_map>
 
+namespace NHamKaas {
+
 struct TScript
 {
     std::string Script;
@@ -13,3 +15,5 @@ struct TScript
 };
 
 TNodeBasePtr ParseScript(const TScript& script);
+
+} // namespace NHamKaas

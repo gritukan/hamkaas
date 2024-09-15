@@ -2,6 +2,8 @@
 
 #include <vector>
 
+namespace NHamKaas {
+
 constexpr int MaxDimensions = 3;
 
 enum EValueType
@@ -47,3 +49,5 @@ private:
     TTensorMeta Meta_;
     void* Data_;
 };
+
+} // namespace NHamKaas

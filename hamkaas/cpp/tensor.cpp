@@ -2,6 +2,8 @@
 
 #include <cassert>
 
+namespace NHamKaas {
+
 int TTensorMeta::GetDimensions() const
 {
     return static_cast<int>(Shape.size());
@@ -91,3 +93,5 @@ void* TTensor::GetData()
 {
     return Data_;
 }
+
+} // namespace NHamKaas

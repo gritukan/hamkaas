@@ -6,6 +6,8 @@
 #include <memory>
 #include <unordered_map>
 
+namespace NHamKaas {
+
 class TNodeBase
 {
 public:
@@ -133,3 +135,5 @@ private:
     template <class T>
     std::vector<char> DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const;
 };
+
+} // namespace NHamKaas

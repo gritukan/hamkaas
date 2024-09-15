@@ -5,6 +5,8 @@
 #include <optional>
 #include <vector>
 
+namespace NHamKaas {
+
 // Removes space symbols from the script and splits it into expressions.
 std::vector<std::string> PreprocessScript(const std::string& script)
 {
@@ -242,3 +244,5 @@ TNodeBasePtr ParseScript(const TScript& script)
 
     return outputNodeIt->second;
 }
+
+} // namespace NHamKaas

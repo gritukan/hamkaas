@@ -4,6 +4,8 @@
 
 #include <unordered_map>
 
+namespace NHamKaas {
+
 class TModel
 {
 public:
@@ -14,3 +16,5 @@ public:
 private:
     const TNodeBasePtr Node_;
 };
+
+} // namespace NHamKaas

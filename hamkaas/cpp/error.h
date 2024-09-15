@@ -1,6 +1,8 @@
 #include <stdexcept>
 #include <sstream>
 
+namespace NHamKaas {
+
 template <class T>
 class NamedValue
 {
@@ -68,8 +70,10 @@ private:
     }
 };
 
+} // namespace NHamKaas
+
 #define THROW(message, ...) \
-    throw HamkaasException(__FILE__, __LINE__, message, ##__VA_ARGS__)
+    throw NHamKaas::HamkaasException(__FILE__, __LINE__, message, ##__VA_ARGS__)
 
 #define NUM_ARGS(...)  NUM_ARGS_IMPL(__VA_ARGS__, 2, 1)
 #define NUM_ARGS_IMPL(_1, _2, N, ...) N
@@ -78,7 +82,7 @@ private:
 #define MACRO_CHOOSER_IMPL(name, n) MACRO_CHOOSER_IMPL2(name, n)
 #define MACRO_CHOOSER_IMPL2(name, n) name##n
 
-#define VAR1(value) NamedValue(#value, value)
-#define VAR2(name, value) NamedValue(#name, value)
+#define VAR1(value) NHamKaas::NamedValue(#value, value)
+#define VAR2(name, value) NHamKaas::NamedValue(#name, value)
 
 #define VAR(...) MACRO_CHOOSER(VAR, __VA_ARGS__)(__VA_ARGS__)

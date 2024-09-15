@@ -10,12 +10,12 @@
 #include <stdlib.h>
 #include <unordered_map>
 
-extern "C" void FreeErrorMessage(char* message)
+extern "C" void HamKaasFreeErrorMessage(char* message)
 {
     free(message);
 }
 
-extern "C" TCompilationResult CompileModel(
+extern "C" TCompilationResult HamKaasCompileModel(
     const char* scriptString,
     const TNamedTensor* constantTensors,
     int constantTensorCount)
@@ -25,14 +25,14 @@ extern "C" TCompilationResult CompileModel(
         constants[constantTensors[index].Name] = constantTensors[index].Data;
     }
 
-    TScript script{
+    NHamKaas::TScript script{
         .Script = std::string{scriptString},
         .Constants = std::move(constants),
     };
 
     try {
-        auto rootNode = ParseScript(script);
-        auto model = new TModel{std::move(rootNode)};
+        auto rootNode = NHamKaas::ParseScript(script);
+        auto model = new NHamKaas::TModel{std::move(rootNode)};
         return {model, nullptr};
     } catch (const std::exception& e) {
         char* message = strdup(e.what());
@@ -41,12 +41,12 @@ extern "C" TCompilationResult CompileModel(
     }
 }
 
-extern "C" void FreeModel(const void* model)
+extern "C" void HamKaasFreeModel(const void* model)
 {
-    delete static_cast<const TModel*>(model);
+    delete static_cast<const NHamKaas::TModel*>(model);
 }
 
-extern "C" const char* EvaluateModel(
+extern "C" const char* HamKaasEvaluateModel(
     const void* model,
     const TNamedTensor* inputTensors,
     int inputTensorCount,
@@ -58,7 +58,7 @@ extern "C" const char* EvaluateModel(
     }
 
     try {
-        auto modelPtr = static_cast<const TModel*>(model);
+        auto modelPtr = static_cast<const NHamKaas::TModel*>(model);
         modelPtr->Evaluate(inputs, outputTensor);
         return nullptr;
     } catch (const std::exception& e) {
@@ -68,7 +68,7 @@ extern "C" const char* EvaluateModel(
     }
 }
 
-void DoInverseElements(float* inputTensor, float* outputTensor, int size)
+void HamKaasDoInverseElements(float* inputTensor, float* outputTensor, int size)
 {
     for (int i = 0; i < size; ++i) {
         if (inputTensor[i] == 0.0) {
@@ -78,10 +78,10 @@ void DoInverseElements(float* inputTensor, float* outputTensor, int size)
     }
 }
 
-extern "C" char* InverseElements(float* inputTensor, float* outputTensor, int size)
+extern "C" char* HamKaasInverseElements(float* inputTensor, float* outputTensor, int size)
 {
     try {
-        DoInverseElements(inputTensor, outputTensor, size);
+        HamKaasDoInverseElements(inputTensor, outputTensor, size);
         return nullptr;
     } catch (const std::exception& e) {
         char* message = strdup(e.what());

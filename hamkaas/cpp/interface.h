@@ -1,6 +1,6 @@
 #pragma once
 
-extern "C" void FreeErrorMessage(char* message);
+extern "C" void HamKaasFreeErrorMessage(char* message);
 
 struct TCompilationResult
 {
@@ -14,14 +14,14 @@ struct TNamedTensor
     const void* Data;
 };
 
-extern "C" TCompilationResult CompileModel(
+extern "C" TCompilationResult HamKaasCompileModel(
     const char* scriptString,
     const TNamedTensor* constantTensors,
     int constantTensorCount);
 
-extern "C" void FreeModel(const void* model);
+extern "C" void HamKaasFreeModel(const void* model);
 
-extern "C" const char* EvaluateModel(
+extern "C" const char* HamKaasEvaluateModel(
     const void* model,
     const TNamedTensor* inputTensors,
     int inputTensorCount,
@@ -32,4 +32,4 @@ extern "C" const char* EvaluateModel(
 // Takes a tensor and returns the inverse of each element.
 // Returns null if successful, otherwise returns an error message.
 // If error message is returned, caller must free the memory by calling FreeErrorMessage.
-extern "C" char* InverseElements(float* inputTensor, float* outputTensor, int size);
+extern "C" char* HamKaasInverseElements(float* inputTensor, float* outputTensor, int size);

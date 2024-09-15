@@ -7,6 +7,8 @@
 #include <cmath>
 #include <cstring>
 
+namespace NHamKaas {
+
 TNodeBase::TNodeBase(TTensorMeta meta)
     : Meta_(std::move(meta))
 { }
@@ -347,3 +349,5 @@ std::vector<char> TSiLUNode::DoEvaluateCpu(const std::unordered_map<std::string,
 
     return resultData;
 }
+
+} // namespace NHamKaas
