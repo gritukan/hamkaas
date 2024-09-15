@@ -11,6 +11,10 @@ namespace NHamKaas {
 constexpr int64_t MaxThreadsPerBlock = 256;
 constexpr int64_t MaxBlockCount = 65535;
 
+#define FOR_ALL_FLOAT_TYPES(XX) \
+    XX(float) \
+    XX(double) \
+
 template <class T>
 __global__ void SumTensorsBroadcastKernel(
     const T* lhs,
@@ -77,7 +81,7 @@ void SumTensorsBroadcast(
         int64_t* rhsShape, \
         int64_t dimensions, \
         int64_t outputSize);
-FOR_ALL_TYPES(INSTANTIATE)
+FOR_ALL_FLOAT_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
 template <class T>
@@ -112,7 +116,7 @@ void ReLU(
         const T* input, \
         T* output, \
         int64_t size);
-FOR_ALL_TYPES(INSTANTIATE)
+FOR_ALL_FLOAT_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
 template <class T>
@@ -147,7 +151,7 @@ void SiLU(
         const T* input, \
         T* output, \
         int64_t size);
-FOR_ALL_TYPES(INSTANTIATE)
+FOR_ALL_FLOAT_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
 template <class T>
@@ -212,7 +216,7 @@ void RMSNorm(
         T* output, \
         int64_t size, \
         T epsilon);
-FOR_ALL_TYPES(INSTANTIATE)
+FOR_ALL_FLOAT_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
 template <class T>
@@ -282,7 +286,7 @@ void ComplexHadamardProductBroadcast(
         int64_t* rhsShape, \
         int64_t dimensions, \
         int64_t outputSize);
-FOR_ALL_TYPES(INSTANTIATE)
+FOR_ALL_FLOAT_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
 template <class T>
@@ -351,7 +355,7 @@ void HadamardProductBroadcast(
         int64_t* rhsShape, \
         int64_t dimensions, \
         int64_t outputSize);
-FOR_ALL_TYPES(INSTANTIATE)
+FOR_ALL_FLOAT_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
 template <class T>
@@ -455,7 +459,7 @@ void SlicedSoftmax(
         int64_t* prefixSizePtr, \
         int64_t size, \
         int64_t vectorSize);
-FOR_ALL_TYPES(INSTANTIATE)
+FOR_ALL_FLOAT_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
 template <class T>
@@ -505,7 +509,7 @@ void ReplaceSlice(
         int64_t replacementSize, \
         const int64_t* begin, \
         const int64_t* end);
-FOR_ALL_TYPES(INSTANTIATE)
+FOR_ALL_FLOAT_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
 template <class T>
@@ -573,7 +577,7 @@ void Permute(
         int64_t* permutation, \
         int64_t dimensions, \
         int64_t size);
-FOR_ALL_TYPES(INSTANTIATE)
+FOR_ALL_FLOAT_TYPES(INSTANTIATE)
 #undef INSTANTIATE
 
 } // namespace NHamKaas

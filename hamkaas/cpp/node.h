@@ -69,7 +69,7 @@ public:
 protected:
     const TTensorMeta Meta_;
 
-    mutable char* Output_ = nullptr;
+    char* Output_ = nullptr;
 };
 
 using TNodeBasePtr = std::shared_ptr<TNodeBase>;

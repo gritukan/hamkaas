@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <memory>
 
+namespace NHamKaas {
+
 class IDevice
 {
 public:
@@ -14,8 +16,9 @@ public:
 
     virtual char* DeviceMalloc(int64_t size) const = 0;
     virtual void DeviceFree(char* ptr) const = 0;
-
 };
 
 std::unique_ptr<IDevice> CreateCpuDevice();
 std::unique_ptr<IDevice> CreateCudaDevice();
+
+} // namespace NHamKaas

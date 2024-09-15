@@ -19,7 +19,7 @@ extern "C" void HamKaasFreeErrorMessage(char* message)
 TInitializationResult HamKaasInitialize()
 {
     try {
-        auto* bootstrap = new TBootstrap();
+        auto* bootstrap = new NHamKaas::TBootstrap();
         return {static_cast<void*>(bootstrap), nullptr};
     } catch (const std::exception& e) {
         char* message = strdup(e.what());
@@ -30,7 +30,7 @@ TInitializationResult HamKaasInitialize()
 
 void HamKaasFinalize(void* handle)
 {
-    delete static_cast<TBootstrap*>(handle);
+    delete static_cast<NHamKaas::TBootstrap*>(handle);
 }
 
 extern "C" TCompilationResult HamKaasCompileModel(
@@ -49,7 +49,9 @@ extern "C" TCompilationResult HamKaasCompileModel(
 
     try {
         auto rootNode = NHamKaas::ParseScript(script);
-        auto model = std::make_unique<NHamKaas::TModel>(static_cast<const TBootstrap*>(handle), std::move(rootNode));
+        auto model = std::make_unique<NHamKaas::TModel>(
+            static_cast<const NHamKaas::TBootstrap*>(handle),
+            std::move(rootNode));
         model->Compile(options, constants);
         return {model.release(), nullptr};
     } catch (const std::exception& e) {

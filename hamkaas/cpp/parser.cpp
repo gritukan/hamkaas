@@ -111,10 +111,6 @@ TNodeBasePtr ParseScript(const std::string& script)
                 return EValueType::Float32;
             } else if (valueType == "float64") {
                 return EValueType::Float64;
-            } else if (valueType == "int16") {
-                return EValueType::Int16;
-            } else if (valueType == "int32") {
-                return EValueType::Int32;
             } else if (valueType == "int64") {
                 return EValueType::Int64;
             } else {      

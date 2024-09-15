@@ -213,15 +213,6 @@ void TSumNode::EvaluateCpu()
     case EValueType::Float64:
         DoEvaluateCpu<double>();
         return;
-    case EValueType::Int16:
-        DoEvaluateCpu<int16_t>();
-        return;
-    case EValueType::Int32:
-        DoEvaluateCpu<int32_t>();
-        return;
-    case EValueType::Int64:
-        DoEvaluateCpu<int64_t>();
-        return;
     default:
         THROW("CPU inference does not support this value type", VAR(GetValueType()));
     }
@@ -405,15 +396,6 @@ void TMulNode::EvaluateCpu()
         return;
     case EValueType::Float64:
         DoEvaluateCpu<double>();
-        return;
-    case EValueType::Int16:
-        DoEvaluateCpu<int16_t>();
-        return;
-    case EValueType::Int32:
-        DoEvaluateCpu<int32_t>();
-        return;
-    case EValueType::Int64:
-        DoEvaluateCpu<int64_t>();
         return;
     default:
         THROW("CPU inference does not support this value type", VAR(GetValueType()));
@@ -608,15 +590,6 @@ void TReLUNode::EvaluateCpu()
     case EValueType::Float64:
         DoEvaluateCpu<double>();
         return;
-    case EValueType::Int16:
-        DoEvaluateCpu<int16_t>();
-        return;
-    case EValueType::Int32:
-        DoEvaluateCpu<int32_t>();
-        return;
-    case EValueType::Int64:
-        DoEvaluateCpu<int64_t>();
-        return;
     default:
         THROW("CPU inference does not support this value type", VAR(GetValueType()));
     }
@@ -677,15 +650,6 @@ void TSiLUNode::EvaluateCpu()
         return;
     case EValueType::Float64:
         DoEvaluateCpu<double>();
-        return;
-    case EValueType::Int16:
-        DoEvaluateCpu<int16_t>();
-        return;
-    case EValueType::Int32:
-        DoEvaluateCpu<int32_t>();
-        return;
-    case EValueType::Int64:
-        DoEvaluateCpu<int64_t>();
         return;
     default:
         THROW("CPU inference does not support this value type", VAR(GetValueType()));

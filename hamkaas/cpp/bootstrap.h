@@ -2,6 +2,8 @@
 
 #include <cublas_v2.h>
 
+namespace NHamKaas {
+
 class TBootstrap
 {
 public:
@@ -13,3 +15,5 @@ public:
 private:
     cublasHandle_t CublasHandle_;
 };
+
+} // namespace NHamKaas

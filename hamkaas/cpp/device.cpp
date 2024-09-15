@@ -7,6 +7,8 @@
 #include <cstdlib>
 #include <cstring>
 
+namespace NHamKaas {
+
 class TCpuDevice
     : public IDevice
 {
@@ -88,3 +90,5 @@ std::unique_ptr<IDevice> CreateCudaDevice()
 {
     return std::make_unique<TCudaDevice>();
 }
+
+} // namespace NHamKaas
