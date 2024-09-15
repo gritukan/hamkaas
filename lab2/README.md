@@ -18,7 +18,7 @@ Another important topic is GPU memory hierarchy. There are many types of memory 
 
 Global memory is the main memory of the GPU. It is accessible from all the threads, just like a regular RAM. In a previous lab, you already used global memory when allocated it via `cudaMalloc`. Global memory is the largest but slowest memory on the GPU, so it is important to minimize the number of accesses to it. In a modern NVIDIA H100 GPU, the global memory size is 80GB and the bandwidth is up to 3TB/s. This is much more than the CPU memory bandwidth but is still not sufficient for some workloads since the number of threads reading from the global memory in parallel is much higher than in the case of regular CPU programs.
 
-Shared memory is the memory that is located inside the SM and is shared between threads in the block. It is much faster than global memory but it is much smaller than global memory. In a modern NVIDIA H100 GPU, the shared memory size is 164KB per SM and the bandwidth can go up to tens of TB/s. It's worth mentioning that shared memory is not homogeneous and is divided into multiple banks. During the single cycle only one operation per bank can be performed, so different threads should work with different banks to avoid bank conflicts resulting in performance degradation. We will see examples of bank conflicts in this lab later.
+Shared memory is the memory that is located inside the SM and is shared between threads in the block. It is much faster than global memory but it is much smaller than global memory. In a modern NVIDIA H100 GPU, the shared memory size is 164KB per SM and the bandwidth can go up to tens of TB/s. It's worth mentioning that shared memory is not homogeneous and is divided into multiple banks. During the single cycle only one operation per bank can be performed, so different threads should work with different banks to avoid bank conflicts resulting in performance degradation.
 
 The fastest memory on the GPU are registers. Just like in the CPU, registers belong to a single core and thus accessible from the single thread. In a modern NVIDIA H100 GPU, the number of registers per CUDA core is 256.
 
@@ -246,10 +246,6 @@ Here you can see in important property of the massively parallel computation. Th
 Another manifestation of this issue is the case if the number of blocks is a little bit bigger than the number of SMs. In this case, after the first batch of blocks is executed, only a small number of SMs will be used leading to the underutilization of the GPU. This can be fixed either by changing the number of blocks or by building better pipelines so there is no barrier after the kernel and the next kernel can be run without waiting for the previous one to complete.
 
 This story is one of the reasons why it is advisable to make all the layer sizes in deep learning models divisible by a large power of 2. All the threads are becoming more homogeneous and there are less number of divergences of the threads.
-
-# 04: Bank conflicts
-
-TODO
 
 # 05: Streams and Graphs
 
