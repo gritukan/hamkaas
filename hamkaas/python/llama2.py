@@ -54,6 +54,7 @@ def checkpoint_init_weights(weights: TransformerWeights,
                             file,
                             shared_weights: int) -> None:
     def read_floats(count):
+        print("Reading", count, "floats")
         values = struct.unpack(str(count) + 'f', file.read(count * 4 if count > 0 else count))
         return values
 
@@ -70,7 +71,7 @@ def checkpoint_init_weights(weights: TransformerWeights,
     weights.rms_final_weight = read_floats(conf.dim)
     weights.freq_cis_real = read_floats(conf.seq_len * (conf.dim // conf.n_heads) // 2)
     weights.freq_cis_imag = read_floats(conf.seq_len * (conf.dim // conf.n_heads) // 2)
-    weights.wcls = weights.token_embedding_table if shared_weights else read_floats(-1)
+    weights.wcls = weights.token_embedding_table if shared_weights else read_floats(conf.vocab_size * conf.dim)
 
 
 def tokenizer_init(conf: Config, file):
@@ -612,6 +613,7 @@ def run(args):
         _config = file.read(struct.calcsize('7i'))
         # Unpacking the data
         dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = struct.unpack('7i', _config)
+        print(hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len)
         # Creating a Config object
         config = Config(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len)
 
@@ -619,7 +621,11 @@ def run(args):
         shared_weights = 1 if config.vocab_size > 0 else 0
         config.vocab_size = abs(config.vocab_size)
 
+        print("Initializing weights...")
+
         checkpoint_init_weights(weights, config, file, shared_weights)
+
+        print("Weights initialized.")
 
     # Right now we cannot run for more than config.seq_len steps
     if steps <= 0 or steps > config.seq_len:
@@ -647,8 +653,11 @@ def run(args):
     # Explicitly print the initial BOS token for stylistic symmetry reasons
     print("<s>")
 
+    print("Building model...")
 
     model = build_model(config, weights)
+
+    print("Model built.")
 
     buffers = {
         "key_cache": torch.zeros(config.n_layers * config.seq_len * config.dim, dtype=torch.float32),
