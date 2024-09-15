@@ -2,6 +2,10 @@
 
 Have you ever been wondered how modern compilers for deep learning work? Or do you just want to get some hands-on experience with CUDA programming? Then this may be for you. This repository consists of a 5 labs that starts from a simple CUDA programs and ends with a simple compiler capable of running LLaMA 2 7b. You definitely won't become an expert in CUDA computing after this, but hopefully you will get a basic understanding of the concepts behind modern deep learning.
 
+# Disclaimer
+
+I have just finished this project, so the code and especially texts were not tested enough and bugs are likely. If you do not want to take a course with potential bugs, I suggest to wait for a while until it becomes more stable.
+
 # Prerequisites
 
 You need to have a basic knowledge of C++ and Python programming. A basic understanding of deep learning is a plus but not required. No prior experience with CUDA is needed.
