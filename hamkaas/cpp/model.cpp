@@ -1,7 +1,10 @@
 #include "model.h"
 
 #include "allocator.h"
+#include "device.h"
 #include "error.h"
+
+#include <cuda_runtime.h>
 
 #include <cassert>
 #include <cstring>
@@ -12,34 +15,70 @@
 
 namespace NHamKaas {
 
-TModel::TModel(TNodeBasePtr rootNode)
-    : RootNode_(std::move(rootNode))
+TModel::TModel(const TBootstrap* bootstrap, TNodeBasePtr rootNode)
+    : Bootstrap_(bootstrap)
+    , RootNode_(std::move(rootNode))
 { }
 
-void TModel::Compile(const std::unordered_map<std::string, const char*>& constants)
+TModel::~TModel()
 {
+    if (MemoryPool_) {
+        if (UseGpu_) {
+            CUDA_ASSERT(cudaFree(MemoryPool_));
+        } else {
+            free(MemoryPool_);
+        }
+    }
+}
+
+void TModel::Compile(
+    const TCompilationOptions& options,
+    const std::unordered_map<std::string, const char*>& constants)
+{
+    UseGpu_ = options.UseGpu;
+    if (UseGpu_) {
+        Device_ = CreateCudaDevice();
+    } else {
+        Device_ = CreateCpuDevice();
+    }
+
     // NB: After this point, the model cannot be further modified.
     BuildEvaluationOrder();
     AllocateMemory();
     FillConstants(constants);
 }
 
-void TModel::Evaluate(const std::unordered_map<std::string, const char*>& inputs, char* output) const
+void TModel::Evaluate(
+    const std::unordered_map<std::string, const char*>& inputs,
+    char* output) const
 {
+    // Copy input tensors to input nodes.
+    for (auto* inputNode : InputNodes_) {
+        auto it = inputs.find(inputNode->GetName());
+        if (it == inputs.end()) {
+            THROW("Missing input", VAR(inputNode->GetName()));
+        }
+
+        auto* buffer = inputNode->GetOutput();
+        Device_->CopyToDevice(buffer, it->second, inputNode->GetOutputSize());
+    }
+
+    TEvaluationContext context{
+        .Bootstrap = Bootstrap_,
+        .Device = Device_.get(),
+    };
+
+    // Now evaluate all the nodes in order.
     for (auto* node : EvaluationOrder_) {
-        if (auto* inputNode = dynamic_cast<TInputNode*>(node)) {
-            auto it = inputs.find(inputNode->GetName());
-            if (it == inputs.end()) {
-                THROW("Missing input", VAR(inputNode->GetName()));
-            }
-            auto* buffer = inputNode->GetOutput();
-            std::memcpy(buffer, it->second, inputNode->GetOutputSize());
+        if (UseGpu_) {
+            node->EvaluateGpu(context);
         } else {
             node->EvaluateCpu();
         }
     }
 
-    std::memcpy(output, RootNode_->GetOutput(), RootNode_->GetCapacity());
+    // And copy the output tensor back.
+    Device_->CopyToHost(output, RootNode_->GetOutput(), RootNode_->GetCapacity());
 }
 
 void TModel::BuildEvaluationOrder()
@@ -55,7 +94,13 @@ void TModel::BuildEvaluationOrder()
             dfs(input);
         }
 
-        EvaluationOrder_.push_back(node);
+        // Input nodes are kinda special in terms of memory management
+        // and evaluation, so we keep them separately.
+        if (auto* inputNode = dynamic_cast<TInputNode*>(node)) {
+            InputNodes_.push_back(inputNode);
+        } else {
+            EvaluationOrder_.push_back(node);
+        }
     };
 
     dfs(RootNode_.get());
@@ -91,40 +136,39 @@ void TModel::AllocateMemory()
     TAllocator allocator;
 
     // Output buffers for input nodes should be available at the beginning
-    // in order to copy input data before execution. At first pass, we allocate
-    // output buffers for input nodes, on the second pass for all other nodes.
-    for (int iteration = 0; iteration < 2; ++iteration) {
-        for (auto* node : EvaluationOrder_) {
-            auto isInputNode = dynamic_cast<TInputNode*>(node) != nullptr;
-            if (isInputNode != (iteration == 0)) {
-                continue;
-            }
+    // of the model evaluation.    
+    for (auto* inputNode : InputNodes_) {
+        auto inputSize = inputNode->GetOutputSize();
+        auto inputPtr = allocator.Allocate(inputSize);
+        assert(outputMemory.emplace(inputNode, inputPtr).second);
+    }
 
-            auto bufferSize = node->GetBufferSize();
-            auto bufferPtr = allocator.Allocate(bufferSize);
-            assert(bufferMemory.emplace(node, bufferPtr).second);
+    for (auto* node : EvaluationOrder_) {
+        auto bufferSize = node->GetBufferSize();
+        auto bufferPtr = allocator.Allocate(bufferSize);
+        assert(bufferMemory.emplace(node, bufferPtr).second);
 
-            auto outputSize = node->GetOutputSize();
-            auto outputPtr = allocator.Allocate(outputSize);
-            assert(outputMemory.emplace(node, outputPtr).second);
+        auto outputSize = node->GetOutputSize();
+        auto outputPtr = allocator.Allocate(outputSize);
+        assert(outputMemory.emplace(node, outputPtr).second);
 
-            // Buffer may be released immediately after evaluation.
-            allocator.Free(bufferPtr, bufferSize);
+        // Buffer may be released immediately after evaluation.
+        allocator.Free(bufferPtr, bufferSize);
 
-            // Free outputs that are not needed anymore.
-            for (auto* output : outputsToFree[node]) {
-                allocator.Free(outputMemory[output], output->GetOutputSize());
-            }
+        // Free outputs that are not needed anymore.
+        for (auto* output : outputsToFree[node]) {
+            allocator.Free(outputMemory[output], output->GetOutputSize());
         }
     }
 
-    auto* baseAddress = static_cast<char*>(malloc(allocator.GetWorkingSetSize()));
-    memset(baseAddress, 0, allocator.GetWorkingSetSize());
-    for (auto* node : EvaluationOrder_) {
-        node->SetBuffer(baseAddress + bufferMemory[node]);
-        node->SetOutput(baseAddress + outputMemory[node]);
+    MemoryPool_ = Device_->DeviceMalloc(allocator.GetWorkingSetSize());
+    for (auto* node : InputNodes_) {
+        node->SetOutput(MemoryPool_ + outputMemory[node]);
     }
-    OutputBuffer_ = baseAddress + outputMemory[RootNode_.get()];
+    for (auto* node : EvaluationOrder_) {
+        node->SetBuffer(MemoryPool_ + bufferMemory[node]);
+        node->SetOutput(MemoryPool_ + outputMemory[node]);
+    }
 }
 
 void TModel::FillConstants(const std::unordered_map<std::string, const char*>& constants)
@@ -136,7 +180,7 @@ void TModel::FillConstants(const std::unordered_map<std::string, const char*>& c
                 THROW("Missing constant", VAR(constantNode->GetName()));
             }
             auto* buffer = constantNode->GetOutput();
-            std::memcpy(buffer, it->second, constantNode->GetOutputSize());
+            Device_->CopyToDevice(buffer, it->second, constantNode->GetOutputSize());
         }
     }
 }

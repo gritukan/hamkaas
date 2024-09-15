@@ -1,3 +1,5 @@
+#include <cublas_v2.h>
+
 #include <stdexcept>
 #include <sstream>
 #include <vector>
@@ -102,3 +104,43 @@ private:
 #define VAR2(name, value) NHamKaas::NamedValue(#name, value)
 
 #define VAR(...) MACRO_CHOOSER(VAR, __VA_ARGS__)(__VA_ARGS__)
+
+#define CUDA_CHECK_ERROR0() \
+    do { \
+        cudaError_t error = cudaGetLastError(); \
+        if (error != cudaSuccess) { \
+            THROW("CUDA error", VAR(error, cudaGetErrorString(error))); \
+        } \
+    } while (0)
+
+#define CUDA_CHECK_ERROR1(error) \
+    do { \
+        if (error != cudaSuccess) { \
+            THROW("CUDA error", VAR(error, cudaGetErrorString(error))); \
+        } \
+    } while (0)
+
+#define CUDA_CHECK_ERROR(...) MACRO_CHOOSER(CUDA_CHECK_ERROR, __VA_ARGS__)(__VA_ARGS__)
+
+#define CUDA_ASSERT(error) \
+    do { \
+        if (error != cudaSuccess) { \
+            fprintf(stderr, "CUDA error in %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(error)); \
+            exit(1); \
+        } \
+    } while (0)
+
+#define CUBLAS_CHECK_ERROR(error) \
+    do { \
+        if (error != CUBLAS_STATUS_SUCCESS) { \
+            THROW("cuBLAS error", VAR(error)); \
+        } \
+    } while (0)
+
+#define CUBLAS_ASSERT(error) \
+    do { \
+        if (error != CUBLAS_STATUS_SUCCESS) { \
+            fprintf(stderr, "cuBLAS error in %s:%d: %d\n", __FILE__, __LINE__, error); \
+            exit(1); \
+        } \
+    } while (0)

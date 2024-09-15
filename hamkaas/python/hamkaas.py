@@ -20,7 +20,7 @@ _SUPPORTED_TENSOR_TYPES = [
 ]
 
 # For now, we support only vectors and matrices.
-_MAX_TENSOR_DIMS = 2
+_MAX_TENSOR_DIMS = 3
 
 class HamKaasNode(ABC):
     def __init__(self):
@@ -563,6 +563,12 @@ def create_script(node: HamKaasNode) -> HamkaasScript:
 
 
 class HamKaasLibrary:
+    class InitializationResult(ctypes.Structure):
+        _fields_ = [
+            ("handle", ctypes.c_void_p),
+            ("error", ctypes.POINTER(ctypes.c_ubyte)),
+        ]
+
     class CompilationResult(ctypes.Structure):
         _fields_ = [
             ("model", ctypes.c_void_p),
@@ -575,10 +581,30 @@ class HamKaasLibrary:
             ("data", ctypes.c_void_p),
         ]
 
+    class CompilationOptions(ctypes.Structure):
+        _fields_ = [
+            ("use_gpu", ctypes.c_bool),
+        ]
+
     def __init__(self, hamkaas_path: str) -> None:
         self.lib = ctypes.CDLL(hamkaas_path)
 
+        self.lib.HamKaasFreeErrorMessage.argtypes = [
+            ctypes.POINTER(ctypes.c_ubyte),
+        ]
+        self.lib.HamKaasFreeErrorMessage.restype = None
+
+        self.lib.HamKaasInitialize.argtypes = []
+        self.lib.HamKaasInitialize.restype = HamKaasLibrary.InitializationResult
+
+        self.lib.HamKaasFinalize.argtypes = [
+            ctypes.c_void_p, # handle
+        ]
+        self.lib.HamKaasFinalize.restype = None
+
         self.lib.HamKaasCompileModel.argtypes = [
+            ctypes.c_void_p, # handle
+            HamKaasLibrary.CompilationOptions, # options
             ctypes.c_char_p, # scriptString
             ctypes.POINTER(HamKaasLibrary.NamedTensor), # constantTensors
             ctypes.c_int, # constantTensorCount
@@ -586,17 +612,31 @@ class HamKaasLibrary:
         self.lib.HamKaasCompileModel.restype = HamKaasLibrary.CompilationResult
 
         self.lib.HamKaasFreeModel.argtypes = [
+            ctypes.c_void_p, # handle
             ctypes.c_void_p, # model
         ]
         self.lib.HamKaasFreeModel.restype = None
 
         self.lib.HamKaasEvaluateModel.argtypes = [
+            ctypes.c_void_p, # handle
             ctypes.c_void_p, # model
             ctypes.POINTER(HamKaasLibrary.NamedTensor), # inputTensors
             ctypes.c_int, # inputTensorCount
             ctypes.c_void_p, # outputTensor
         ]
         self.lib.HamKaasEvaluateModel.restype = ctypes.POINTER(ctypes.c_ubyte)
+
+        result = self.lib.HamKaasInitialize()
+        if result.error:
+            error = ctypes.string_at(result.error).decode()
+            self.lib.HamKaasFreeErrorMessage(result.error)
+            raise RuntimeError(error)
+        self.handle = result.handle
+
+    def __del__(self) -> None:
+        if self.lib:
+            self.lib.HamKaasFinalize(self.handle)
+
 
 _HAM_KAAS_LIBRARY = None
 
@@ -615,7 +655,7 @@ class HamKaasModel:
 
     def __del__(self) -> None:
         assert _HAM_KAAS_LIBRARY
-        _HAM_KAAS_LIBRARY.lib.HamKaasFreeModel(self._model_ptr)
+        _HAM_KAAS_LIBRARY.lib.HamKaasFreeModel(_HAM_KAAS_LIBRARY.handle, self._model_ptr)
 
     def evaluate(self, inputs: Dict[str, torch.Tensor]) -> torch.Tensor:
         if _HAM_KAAS_LIBRARY is None:
@@ -633,6 +673,7 @@ class HamKaasModel:
         output_tensor_ptr = ctypes.cast(output_tensor.data_ptr(), ctypes.c_void_p)
 
         error_ptr = _HAM_KAAS_LIBRARY.lib.HamKaasEvaluateModel(
+            _HAM_KAAS_LIBRARY.handle,
             self._model_ptr,
             (HamKaasLibrary.NamedTensor * len(named_tensors))(*named_tensors),
             len(named_tensors),
@@ -646,7 +687,7 @@ class HamKaasModel:
 
         return output_tensor
 
-def compile_model(node: HamKaasNode) -> None:
+def compile_model(node: HamKaasNode, use_gpu=False) -> None:
     if _HAM_KAAS_LIBRARY is None:
         raise ValueError("Hamkaas library is not initialized")
 
@@ -659,14 +700,17 @@ def compile_model(node: HamKaasNode) -> None:
         for name, tensor in script.constants.items()
     ]
 
+    options = HamKaasLibrary.CompilationOptions(use_gpu=use_gpu)
+
     compilation_result = _HAM_KAAS_LIBRARY.lib.HamKaasCompileModel(
+        _HAM_KAAS_LIBRARY.handle,
+        options,
         script.script.encode("utf-8"),
         (HamKaasLibrary.NamedTensor * len(named_tensors))(*named_tensors),
         len(named_tensors),
     )
 
     if compilation_result.error:
-        print(compilation_result.error)
         error = ctypes.string_at(compilation_result.error).decode()
         _HAM_KAAS_LIBRARY.lib.HamKaasFreeErrorMessage(compilation_result.error)
         raise RuntimeError(error)

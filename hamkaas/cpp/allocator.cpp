@@ -4,6 +4,10 @@ namespace NHamKaas {
 
 int64_t TAllocator::Allocate(int64_t size)
 {
+    if (size % 64) {
+        size += (64 - size % 64);
+    }
+
     int64_t ptr = Offset_;
     Offset_ += size;
     return ptr;

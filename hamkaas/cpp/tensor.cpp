@@ -22,8 +22,6 @@ int64_t TTensorMeta::GetElementCount() const
 int64_t TTensorMeta::GetElementSize() const
 {
     switch (ValueType) {
-    case EValueType::Float16:
-        return 2;
     case EValueType::Float32:
         return 4;
     case EValueType::Float64:

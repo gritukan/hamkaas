@@ -662,6 +662,9 @@ def run(args):
 
     hamkaas.initialize("../cpp/libhamkaas.so")
 
+    print(hamkaas.create_script(node).script)
+    import sys; sys.exit(0)
+
     model = hamkaas.compile_model(node)
 
     print("Model compiled.")

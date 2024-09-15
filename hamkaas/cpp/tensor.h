@@ -9,7 +9,6 @@ constexpr int64_t MaxDimensions = 3;
 
 enum EValueType
 {
-    Float16,
     Float32,
     Float64,
     Int16,

@@ -1,5 +1,6 @@
 #include "interface.h"
 
+#include "bootstrap.h"
 #include "error.h"
 #include "model.h"
 #include "parser.h"
@@ -15,7 +16,26 @@ extern "C" void HamKaasFreeErrorMessage(char* message)
     free(message);
 }
 
+TInitializationResult HamKaasInitialize()
+{
+    try {
+        auto* bootstrap = new TBootstrap();
+        return {static_cast<void*>(bootstrap), nullptr};
+    } catch (const std::exception& e) {
+        char* message = strdup(e.what());
+        assert(message && "Out of memory for error");
+        return {nullptr, message};
+    }
+}
+
+void HamKaasFinalize(void* handle)
+{
+    delete static_cast<TBootstrap*>(handle);
+}
+
 extern "C" TCompilationResult HamKaasCompileModel(
+    const void* handle,
+    TCompilationOptions options,
     const char* scriptString,
     const TNamedTensor* constantTensors,
     int constantTensorCount)
@@ -29,8 +49,8 @@ extern "C" TCompilationResult HamKaasCompileModel(
 
     try {
         auto rootNode = NHamKaas::ParseScript(script);
-        auto model = new NHamKaas::TModel{std::move(rootNode)};
-        model->Compile(constants);
+        auto model = new NHamKaas::TModel(static_cast<const TBootstrap*>(handle), std::move(rootNode));
+        model->Compile(options, constants);
         return {model, nullptr};
     } catch (const std::exception& e) {
         char* message = strdup(e.what());
@@ -39,12 +59,13 @@ extern "C" TCompilationResult HamKaasCompileModel(
     }
 }
 
-extern "C" void HamKaasFreeModel(const void* model)
+extern "C" void HamKaasFreeModel(const void* /*handle*/, const void* model)
 {
     delete static_cast<const NHamKaas::TModel*>(model);
 }
 
 extern "C" const char* HamKaasEvaluateModel(
+    const void* /*handle*/,
     const void* model,
     const TNamedTensor* inputTensors,
     int inputTensorCount,

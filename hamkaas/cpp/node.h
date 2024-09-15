@@ -1,5 +1,7 @@
 #pragma once
 
+#include "bootstrap.h"
+#include "device.h"
 #include "tensor.h"
 
 #include <string>
@@ -7,6 +9,12 @@
 #include <unordered_map>
 
 namespace NHamKaas {
+
+struct TEvaluationContext
+{
+    const TBootstrap* Bootstrap;
+    const IDevice* Device;
+};
 
 class TNodeBase
 {
@@ -50,7 +58,8 @@ public:
     // Returns the pointer to the output buffer.
     char* GetOutput() const;
 
-    virtual void EvaluateCpu() const = 0;
+    virtual void EvaluateCpu() = 0;
+    virtual void EvaluateGpu(const TEvaluationContext& context) = 0;
 
 protected:
     const TTensorMeta Meta_;
@@ -70,7 +79,8 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const std::string Name_;
@@ -86,7 +96,8 @@ public:
 
     TNodeBase* GetOutputOwner() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 };
 
 class TConstantNode
@@ -101,7 +112,8 @@ public:
 
     TNodeBase* GetOutputOwner() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const std::string Name_;
@@ -118,16 +130,28 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
-    void EvaluateCpu() const override;
+    int64_t GetBufferSize() const override;
+    void SetBuffer(char* buffer) override;
+
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Lhs_;
     const TNodeBasePtr Rhs_;
 
+    bool Initialized_ = false;
+
+    int64_t* LhsShape_;
+    int64_t* RhsShapeMultiplier_;
+
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
 
     template <class T>
-    void DoEvaluateCpu() const;
+    void DoEvaluateCpu();
+
+    template <class T>
+    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TMulNode
@@ -141,16 +165,31 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
-    void EvaluateCpu() const override;
+    int64_t GetBufferSize() const override;
+    void SetBuffer(char* buffer) override;
+
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Lhs_;
     const TNodeBasePtr Rhs_;
 
+    void** LhsMatrices_ = nullptr;
+    void** RhsMatrices_ = nullptr;
+    void** OutputMatrices_ = nullptr;
+
+    char* TransposedProductBuffer_ = nullptr;
+
+    bool Initialized_ = false;
+
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
 
     template <class T>
-    void DoEvaluateCpu() const;
+    void DoEvaluateCpu();
+
+    template <class T>
+    void DoEvaluateGpu(const TEvaluationContext& context);
 };
 
 class TReLUNode
@@ -163,13 +202,14 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Input_;
 
     template <class T>
-    void DoEvaluateCpu() const;
+    void DoEvaluateCpu();
 };
 
 class TSiLUNode
@@ -182,13 +222,14 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Input_;
 
     template <class T>
-    void DoEvaluateCpu() const;
+    void DoEvaluateCpu();
 };
 
 class TSliceNode
@@ -206,7 +247,8 @@ public:
     int64_t GetOutputSize() const override;
     TNodeBase* GetOutputOwner() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Input_;
@@ -227,14 +269,15 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Input_;
     const TNodeBasePtr Weights_;
 
     template <class T>
-    void DoEvaluateCpu() const;
+    void DoEvaluateCpu();
 };
 
 class TReshapeNode
@@ -251,7 +294,8 @@ public:
     int64_t GetOutputSize() const override;
     TNodeBase* GetOutputOwner() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Input_;
@@ -271,14 +315,15 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Lhs_;
     const TNodeBasePtr Rhs_;
 
     template <class T>
-    void DoEvaluateCpu() const;
+    void DoEvaluateCpu();
 };
 
 class THadamardProductNode
@@ -292,14 +337,15 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Lhs_;
     const TNodeBasePtr Rhs_;
 
     template <class T>
-    void DoEvaluateCpu() const;
+    void DoEvaluateCpu();
 };
 
 class TPermuteNode
@@ -313,7 +359,8 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Input_;
@@ -338,7 +385,8 @@ public:
     int64_t GetOutputSize() const override;
     TNodeBase* GetOutputOwner() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Input_;
@@ -358,14 +406,15 @@ public:
 
     std::vector<TNodeBase*> GetInputs() const override;
 
-    void EvaluateCpu() const override;
+    void EvaluateCpu() override;
+    void EvaluateGpu(const TEvaluationContext& context) override;
 
 private:
     const TNodeBasePtr Input_;
     const TNodeBasePtr PrefixSize_;
 
     template <class T>
-    void DoEvaluateCpu() const;
+    void DoEvaluateCpu();
 };
 
 } // namespace NHamKaas

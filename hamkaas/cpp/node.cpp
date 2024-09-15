@@ -1,6 +1,10 @@
 #include "node.h"
 
+#include <cuda_runtime.h>
+
 #include "error.h"
+#include "helpers.h"
+#include "kernels.h"
 
 #include <stdexcept>
 #include <cassert>
@@ -94,7 +98,12 @@ std::vector<TNodeBase*> TInputNode::GetInputs() const
     return {};
 }
 
-void TInputNode::EvaluateCpu() const
+void TInputNode::EvaluateCpu()
+{
+    // Do nothing; buffer is already set by the model evaluator.
+}
+
+void TInputNode::EvaluateGpu(const TEvaluationContext& /*context*/)
 {
     // Do nothing; buffer is already set by the model evaluator.
 }
@@ -115,7 +124,12 @@ TNodeBase* TBufferNode::GetOutputOwner() const
     return nullptr;
 }
 
-void TBufferNode::EvaluateCpu() const
+void TBufferNode::EvaluateCpu()
+{
+    // Do nothing.
+}
+
+void TBufferNode::EvaluateGpu(const TEvaluationContext& /*context*/)
 {
     // Do nothing.
 }
@@ -142,7 +156,12 @@ TNodeBase* TConstantNode::GetOutputOwner() const
     return nullptr;
 }
 
-void TConstantNode::EvaluateCpu() const
+void TConstantNode::EvaluateCpu()
+{
+    // Do nothing; buffer is already set by the model evaluator.
+}
+
+void TConstantNode::EvaluateGpu(const TEvaluationContext& /*context*/)
 {
     // Do nothing; buffer is already set by the model evaluator.
 }
@@ -168,7 +187,18 @@ std::vector<TNodeBase*> TSumNode::GetInputs() const
     return {Lhs_.get(), Rhs_.get()};
 }
 
-void TSumNode::EvaluateCpu() const
+int64_t TSumNode::GetBufferSize() const
+{
+    return 2 * GetDimensions() * sizeof(int64_t);
+}
+
+void TSumNode::SetBuffer(char* buffer)
+{
+    LhsShape_ = reinterpret_cast<int64_t*>(buffer);
+    RhsShapeMultiplier_ = LhsShape_ + GetDimensions();
+}
+
+void TSumNode::EvaluateCpu()
 {
     switch (GetValueType()) {
     case EValueType::Float32:
@@ -191,8 +221,52 @@ void TSumNode::EvaluateCpu() const
     }
 }
 
+void TSumNode::EvaluateGpu(const TEvaluationContext& context)
+{
+    if (!Initialized_) {
+        auto lhsShape = Lhs_->GetShape();
+
+        std::vector<int64_t> rhsShapeMultiplier(Rhs_->GetDimensions());
+        for (int index = 0; index < GetDimensions(); ++index) {
+            auto rhsSize = Rhs_->GetShape()[index];
+            if (lhsShape[index] == rhsSize) {
+                rhsShapeMultiplier[index] = 1;
+            } else {
+                assert(rhsSize == 1);
+                rhsShapeMultiplier[index] = 0;
+            }
+        }
+
+        const auto* device = context.Device;
+        device->CopyToDevice(LhsShape_, lhsShape.data(), GetDimensions() * sizeof(int64_t));
+        device->CopyToDevice(RhsShapeMultiplier_, rhsShapeMultiplier.data(), GetDimensions() * sizeof(int64_t));
+
+        Initialized_ = true;
+    }
+
+    switch (GetValueType()) {
+    case EValueType::Float32:
+        DoEvaluateGpu<float>(context);
+        return;
+    case EValueType::Float64:
+        DoEvaluateGpu<double>(context);
+        return;
+    case EValueType::Int16:
+        DoEvaluateGpu<int16_t>(context);
+        return;
+    case EValueType::Int32:
+        DoEvaluateGpu<int32_t>(context);
+        return;
+    case EValueType::Int64:
+        DoEvaluateGpu<int64_t>(context);
+        return;
+    default:
+        THROW("GPU inference does not support this value type", VAR(GetValueType()));
+    }
+}
+
 template <class T>
-void TSumNode::DoEvaluateCpu() const
+void TSumNode::DoEvaluateCpu()
 {
     auto* lhs = reinterpret_cast<const T*>(Lhs_->GetOutput());
     auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
@@ -218,6 +292,19 @@ void TSumNode::DoEvaluateCpu() const
 
         output[index] = lhs[index] + rhs[rhsIndex];
     }
+}
+
+template <class T>
+void TSumNode::DoEvaluateGpu(const TEvaluationContext& context)
+{
+    SumTensorsBroadcast(
+        reinterpret_cast<const T*>(Lhs_->GetOutput()),
+        reinterpret_cast<const T*>(Rhs_->GetOutput()),
+        reinterpret_cast<T*>(GetOutput()),
+        LhsShape_,
+        RhsShapeMultiplier_,
+        GetDimensions(),
+        GetElementCount());
 }
 
 TTensorMeta TSumNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
@@ -258,6 +345,30 @@ const TNodeBasePtr& TMulNode::GetRhs() const
 std::vector<TNodeBase*> TMulNode::GetInputs() const
 {
     return {Lhs_.get(), Rhs_.get()};
+}
+
+int64_t TMulNode::GetBufferSize() const
+{
+    int b = 1;
+    if (Lhs_->GetDimensions() == 3) {
+        b = Lhs_->GetShape()[0];
+    }
+
+    return 3 * Align(b) * sizeof(void*) + Align(GetOutputSize());
+}
+
+void TMulNode::SetBuffer(char* buffer)
+{
+    int b = 1;
+    if (Lhs_->GetDimensions() == 3) {
+        b = Lhs_->GetShape()[0];
+    }
+
+    LhsMatrices_ = reinterpret_cast<void**>(buffer);
+    RhsMatrices_ = LhsMatrices_ + Align(b);
+    OutputMatrices_ = RhsMatrices_ + Align(b);
+
+    TransposedProductBuffer_ = buffer + 3 * Align(b);
 }
 
 TTensorMeta TMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
@@ -309,7 +420,7 @@ TTensorMeta TMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& r
     }
 }
 
-void TMulNode::EvaluateCpu() const
+void TMulNode::EvaluateCpu()
 {
     switch (GetValueType()) {
     case EValueType::Float32:
@@ -332,8 +443,22 @@ void TMulNode::EvaluateCpu() const
     }
 }
 
+void TMulNode::EvaluateGpu(const TEvaluationContext& context)
+{
+    switch (GetValueType()) {
+    case EValueType::Float32:
+        DoEvaluateGpu<float>(context);
+        return;
+    case EValueType::Float64:
+        DoEvaluateGpu<double>(context);
+        return;
+    default:
+        THROW("GPU inference does not support this value type", VAR(GetValueType()));
+    }
+}
+
 template <class T>
-void TMulNode::DoEvaluateCpu() const
+void TMulNode::DoEvaluateCpu()
 {
     auto* lhs = reinterpret_cast<const T*>(Lhs_->GetOutput());
     auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
@@ -370,6 +495,125 @@ void TMulNode::DoEvaluateCpu() const
     }
 }
 
+template <class T>
+void TMulNode::DoEvaluateGpu(const TEvaluationContext& context)
+{
+    int64_t b, n, m, k;
+    if (Lhs_->GetDimensions() == 1) {
+        b = 1;
+        n = 1;
+        m = Rhs_->GetShape()[1];
+        k = Lhs_->GetShape()[0];
+    } else if (Lhs_->GetDimensions() == 2) {
+        b = 1;
+        n = Lhs_->GetShape()[0];
+        m = Rhs_->GetShape()[1];
+        k = Lhs_->GetShape()[1];
+    } else {
+        b = Lhs_->GetShape()[0];
+        n = Lhs_->GetShape()[1];
+        m = Rhs_->GetShape()[2];
+        k = Lhs_->GetShape()[2];
+    }
+
+    T One = 1;
+    T Zero = 0;
+
+    cudaDataType_t type;
+    switch (GetValueType()) {
+    case EValueType::Float32:
+        type = CUDA_R_32F;
+        break;
+    case EValueType::Float64:
+        type = CUDA_R_64F;
+        break;
+    }
+
+    if (!Initialized_) {
+        std::vector<void*> lhsMatrices(b);
+        std::vector<void*> rhsMatrices(b);
+        std::vector<void*> outputMatrices(b);
+
+        for (int index = 0; index < b; ++index) {
+            lhsMatrices[index] = Lhs_->GetOutput() + index * n * k * sizeof(T);
+            rhsMatrices[index] = Rhs_->GetOutput() + index * k * m * sizeof(T);
+            outputMatrices[index] = TransposedProductBuffer_ + index * n * m * sizeof(T);
+        }
+
+        const auto* device = context.Device;
+        device->CopyToDevice(LhsMatrices_, lhsMatrices.data(), b * sizeof(char*));
+        device->CopyToDevice(RhsMatrices_, rhsMatrices.data(), b * sizeof(char*));
+        device->CopyToDevice(OutputMatrices_, outputMatrices.data(), b * sizeof(char*));
+
+        Initialized_ = true;
+    }
+
+    CUBLAS_CHECK_ERROR(cublasGemmBatchedEx(
+        context.Bootstrap->GetCublasHandle(),
+        CUBLAS_OP_T,
+        CUBLAS_OP_T,
+        m,
+        n,
+        k,
+        &One,
+        LhsMatrices_,
+        type,
+        k,
+        RhsMatrices_,
+        type,
+        n,
+        &Zero,
+        OutputMatrices_,
+        type,
+        m,
+        b,
+        type,
+        CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+
+    if (type == CUDA_R_32F) {
+        for (int index = 0; index < b; ++index) {
+            auto* inputAddress = TransposedProductBuffer_ + index * n * m * sizeof(T);
+            CUBLAS_CHECK_ERROR(cublasSgeam(
+                context.Bootstrap->GetCublasHandle(),
+                CUBLAS_OP_T,
+                CUBLAS_OP_T,
+                m,
+                n,
+                reinterpret_cast<float*>(&One),
+                reinterpret_cast<float*>(inputAddress),
+                m,
+                reinterpret_cast<float*>(&Zero),
+                reinterpret_cast<float*>(inputAddress),
+                m,
+                reinterpret_cast<float*>(GetOutput() + index * n * m * sizeof(T)),
+                m));
+        }
+    } else if (type == CUDA_R_64F) {
+        for (int index = 0; index < b; ++index) {
+            auto* inputAddress = TransposedProductBuffer_ + index * n * m * sizeof(T);
+            CUBLAS_CHECK_ERROR(cublasDgeam(
+                context.Bootstrap->GetCublasHandle(),
+                CUBLAS_OP_T,
+                CUBLAS_OP_T,
+                m,
+                n,
+                reinterpret_cast<double*>(&One),
+                reinterpret_cast<double*>(inputAddress),
+                m,
+                reinterpret_cast<double*>(&Zero),
+                reinterpret_cast<double*>(inputAddress),
+                m,
+                reinterpret_cast<double*>(GetOutput() + index * n * m * sizeof(T)),
+                m));
+        }
+    } else {
+        THROW("Unsupported value type", VAR(GetValueType()));
+    }
+
+    CUDA_CHECK_ERROR(cudaDeviceSynchronize());
+}
+
 TReLUNode::TReLUNode(TNodeBasePtr input)
     : TNodeBase(input->GetMeta())
     , Input_(std::move(input))
@@ -385,7 +629,7 @@ std::vector<TNodeBase*> TReLUNode::GetInputs() const
     return {Input_.get()};
 }
 
-void TReLUNode::EvaluateCpu() const
+void TReLUNode::EvaluateCpu()
 {
     switch (GetValueType()) {
     case EValueType::Float32:
@@ -408,8 +652,13 @@ void TReLUNode::EvaluateCpu() const
     }
 }
 
+void TReLUNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+{
+    THROW("GPU inference is not supported for ReLU node");
+}
+
 template <class T>
-void TReLUNode::DoEvaluateCpu() const
+void TReLUNode::DoEvaluateCpu()
 {
     auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
@@ -434,7 +683,7 @@ std::vector<TNodeBase*> TSiLUNode::GetInputs() const
     return {Input_.get()};
 }
 
-void TSiLUNode::EvaluateCpu() const
+void TSiLUNode::EvaluateCpu()
 {
     switch (GetValueType()) {
     case EValueType::Float32:
@@ -457,8 +706,13 @@ void TSiLUNode::EvaluateCpu() const
     }
 }
 
+void TSiLUNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+{
+    THROW("GPU inference is not supported for SiLU node");
+}
+
 template <class T>
-void TSiLUNode::DoEvaluateCpu() const
+void TSiLUNode::DoEvaluateCpu()
 {
     auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
     auto* output = reinterpret_cast<T*>(GetOutput());
@@ -500,8 +754,19 @@ TNodeBase* TSliceNode::GetOutputOwner() const
     return Input_->GetOutputOwner();
 }
 
-void TSliceNode::EvaluateCpu() const
+void TSliceNode::EvaluateCpu()
 {
+    int64_t stride = 1;
+    for (int64_t index = 1; index < GetDimensions(); ++index) {
+        stride *= GetShape()[index];
+    }
+
+    Output_ = Input_->GetOutput() + Begin_ * stride * GetElementSize();
+}
+
+void TSliceNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+{
+    // TODO: Refactor to avoid copypaste.
     int64_t stride = 1;
     for (int64_t index = 1; index < GetDimensions(); ++index) {
         stride *= GetShape()[index];
@@ -569,7 +834,7 @@ std::vector<TNodeBase*> TRMSNormNode::GetInputs() const
     return {Input_.get(), Weights_.get()};
 }
 
-void TRMSNormNode::EvaluateCpu() const
+void TRMSNormNode::EvaluateCpu()
 {
     switch (GetValueType()) {
     case EValueType::Float32:
@@ -583,8 +848,13 @@ void TRMSNormNode::EvaluateCpu() const
     }
 }
 
+void TRMSNormNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+{
+    THROW("GPU inference is not supported for RMS normalization node");
+}
+
 template <class T>
-void TRMSNormNode::DoEvaluateCpu() const
+void TRMSNormNode::DoEvaluateCpu()
 {
     auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
     auto* weights = reinterpret_cast<const T*>(Weights_->GetOutput());
@@ -635,7 +905,12 @@ TNodeBase* TReshapeNode::GetOutputOwner() const
     return Input_->GetOutputOwner();
 }
 
-void TReshapeNode::EvaluateCpu() const
+void TReshapeNode::EvaluateCpu()
+{
+    Output_ = Input_->GetOutput();
+}
+
+void TReshapeNode::EvaluateGpu(const TEvaluationContext& /*context*/)
 {
     Output_ = Input_->GetOutput();
 }
@@ -691,7 +966,7 @@ std::vector<TNodeBase*> TComplexHadamardProductNode::GetInputs() const
     return {Lhs_.get(), Rhs_.get()};
 }
 
-void TComplexHadamardProductNode::EvaluateCpu() const
+void TComplexHadamardProductNode::EvaluateCpu()
 {
     switch (GetValueType()) {
     case EValueType::Float32:
@@ -714,8 +989,13 @@ void TComplexHadamardProductNode::EvaluateCpu() const
     }
 }
 
+void TComplexHadamardProductNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+{
+    THROW("GPU inference is not supported for complex Hadamard product node");
+}
+
 template <typename T>
-void TComplexHadamardProductNode::DoEvaluateCpu() const
+void TComplexHadamardProductNode::DoEvaluateCpu()
 {
     auto* lhs = reinterpret_cast<const T*>(Lhs_->GetOutput());
     auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
@@ -766,7 +1046,7 @@ std::vector<TNodeBase*> THadamardProductNode::GetInputs() const
     return {Lhs_.get(), Rhs_.get()};
 }
 
-void THadamardProductNode::EvaluateCpu() const
+void THadamardProductNode::EvaluateCpu()
 {
     switch (GetValueType()) {
     case EValueType::Float32:
@@ -789,8 +1069,13 @@ void THadamardProductNode::EvaluateCpu() const
     }
 }
 
+void THadamardProductNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+{
+    THROW("GPU inference is not supported for Hadamard product node");
+}
+
 template <typename T>
-void THadamardProductNode::DoEvaluateCpu() const
+void THadamardProductNode::DoEvaluateCpu()
 {
     auto* lhs = reinterpret_cast<const T*>(Lhs_->GetOutput());
     auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
@@ -838,7 +1123,7 @@ std::vector<TNodeBase*> TPermuteNode::GetInputs() const
     return {Input_.get()};
 }
 
-void TPermuteNode::EvaluateCpu() const
+void TPermuteNode::EvaluateCpu()
 {
     auto dimensions = GetDimensions();
     auto elementCount = GetElementCount();
@@ -862,6 +1147,11 @@ void TPermuteNode::EvaluateCpu() const
             Input_->GetOutput() + inputIndex * GetElementSize(),
             GetElementSize());
     }
+}
+
+void TPermuteNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+{
+    THROW("GPU inference is not supported for permute node");
 }
 
 TTensorMeta TPermuteNode::CalculateMeta(const TTensorMeta& input, const std::vector<int64_t>& permutation)
@@ -958,7 +1248,7 @@ TNodeBase* TReplaceSliceNode::GetOutputOwner() const
     return Input_->GetOutputOwner();
 }
 
-void TReplaceSliceNode::EvaluateCpu() const
+void TReplaceSliceNode::EvaluateCpu()
 {
     auto* replacement = Replacement_->GetOutput();
     auto begin = *reinterpret_cast<const int64_t*>(Begin_->GetOutput());
@@ -980,6 +1270,11 @@ void TReplaceSliceNode::EvaluateCpu() const
         (end - begin) * stride * GetElementSize());
 
     Output_ = Input_->GetOutput();
+}
+
+void TReplaceSliceNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+{
+    THROW("GPU inference is not supported for replace slice node");
 }
 
 TSlicedSoftmaxNode::TSlicedSoftmaxNode(TNodeBasePtr input, TNodeBasePtr prefixSize)
@@ -1013,7 +1308,7 @@ std::vector<TNodeBase*> TSlicedSoftmaxNode::GetInputs() const
     return {Input_.get(), PrefixSize_.get()};
 }
 
-void TSlicedSoftmaxNode::EvaluateCpu() const
+void TSlicedSoftmaxNode::EvaluateCpu()
 {
     switch (GetValueType()) {
     case EValueType::Float32:
@@ -1027,8 +1322,13 @@ void TSlicedSoftmaxNode::EvaluateCpu() const
     }
 }
 
+void TSlicedSoftmaxNode::EvaluateGpu(const TEvaluationContext& /*context*/)
+{
+    THROW("GPU inference is not supported for sliced softmax node");
+}
+
 template <class T>
-void TSlicedSoftmaxNode::DoEvaluateCpu() const
+void TSlicedSoftmaxNode::DoEvaluateCpu()
 {
     auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
     auto prefixSize = *reinterpret_cast<const int64_t*>(PrefixSize_->GetOutput());

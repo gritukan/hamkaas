@@ -2,11 +2,14 @@
 
 extern "C" void HamKaasFreeErrorMessage(char* message);
 
-struct TCompilationResult
+struct TInitializationResult
 {
-    const void* Model;
+    void* Handle;
     const char* ErrorMessage;
 };
+
+extern "C" TInitializationResult HamKaasInitialize();
+extern "C" void HamKaasFinalize(void* handle);
 
 struct TNamedTensor
 {
@@ -14,14 +17,30 @@ struct TNamedTensor
     const char* Data;
 };
 
+struct TCompilationOptions
+{
+    bool UseGpu;
+};
+
+struct TCompilationResult
+{
+    const void* Model;
+    const char* ErrorMessage;
+};
+
 extern "C" TCompilationResult HamKaasCompileModel(
+    const void* handle,
+    TCompilationOptions options,
     const char* scriptString,
     const TNamedTensor* constantTensors,
     int constantTensorCount);
 
-extern "C" void HamKaasFreeModel(const void* model);
+extern "C" void HamKaasFreeModel(
+    const void* handle,
+    const void* model);
 
 extern "C" const char* HamKaasEvaluateModel(
+    const void* handle,
     const void* model,
     const TNamedTensor* inputTensors,
     int inputTensorCount,
