@@ -1,6 +1,6 @@
 Hi, and welcome to the course!
 
-In this lab you will learn how to program CUDA, a parallel computing platform and programming model developed by NVIDIA for GPUs. It is used to execute code on the GPU and is used in different machine learning frameworks like PyTorch and JAX. HamKaas also uses CUDA for computations, so it is important to 
+In this lab you will learn how to program CUDA, a parallel computing platform and programming model developed by NVIDIA for GPUs. It is used to execute code on the GPU and is used in different machine learning frameworks like PyTorch and JAX. HamKaas also uses CUDA for computations, so it is important to know how to write programs for GPU using it.
 
 We will go through the basic concepts of CUDA and will write some programs to get you started.
 
@@ -130,3 +130,5 @@ Hints:
 * To find $16 \times 16$ submatrix of the output matrix you need a larger (which size?) submatrix of the input matrix. Try to write a code in such a way that each thread does at most $3$ global memory accesses. If you want to add a little bit challenge, try to do it with $2$ accesses.
 
 When you are done, test your solution with `make 06-test`. If you see `All tests passed`, great job!
+
+Congratulations! You have completed the lab and now know how to write CUDA kernels. In the next lab, we will talk about how to make these kernels efficient.

@@ -6,15 +6,9 @@
 
 __global__ void SwapAdjacentKernel(double* data)
 {
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int localIndex = threadIdx.x;
-
     __shared__ double buffer[2];
-    buffer[localIndex] = data[index];
 
-    __syncthreads();
-
-    data[index] = buffer[1 - localIndex];
+    // Your code here.
 }
 
 std::vector<double> SwapAdjacentGpu(std::vector<double> data)

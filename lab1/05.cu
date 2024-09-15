@@ -3,22 +3,22 @@
 #include <iostream>
 #include <vector>
 
-std::vector<double> SiLUGpu(std::vector<double> data)
+std::vector<float> SiLUGpu(std::vector<float> data)
 {
     // Your code here.
 }
 
-std::vector<double> SiLUCpu(std::vector<double> data)
+std::vector<float> SiLUCpu(std::vector<float> data)
 {
     for (int i = 0; i < data.size(); i++) {
-        double x = data[i];
+        float x = data[i];
         data[i] = x / (1 + exp(-x));
     }
 
     return data;
 }
 
-bool DoTest(std::vector<double> data)
+bool DoTest(std::vector<float> data)
 {
     auto gpuResult = SiLUGpu(data);
     auto cpuResult = SiLUCpu(data);
@@ -34,10 +34,10 @@ bool DoTest(std::vector<double> data)
 
 int main()
 {
-    std::vector<std::vector<double>> testValues;
+    std::vector<std::vector<float>> testValues;
 
     for (int size : {1, 2, 3, 100, 1000, 10000}) {
-        std::vector<double> a(size);
+        std::vector<float> a(size);
         for (int i = 0; i < size; i++) {
             if (i % 2 == 0) {
                 a[i] = i / 1000;

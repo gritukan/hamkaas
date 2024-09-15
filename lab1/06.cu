@@ -5,23 +5,23 @@
 #include <vector>
 
 template <int KernelSize, int BlockDimensionSize>
-__global__ void MaxPoolingKernel(double* input, double* output, int n, int m)
+__global__ void MaxPoolingKernel(float* input, float* output, int n, int m)
 {
     // Write your code here.
 }
 
-std::vector<std::vector<double>> MaxPoolingGpu(std::vector<std::vector<double>> input)
+std::vector<std::vector<float>> MaxPoolingGpu(std::vector<std::vector<float>> input)
 {
     int n = input.size();
     int m = input[0].size();
 
-    double* gpuInput;
-    double* gpuOutput;
-    CUDA_CHECK_ERROR(cudaMalloc(&gpuInput, n * m * sizeof(double)));
-    CUDA_CHECK_ERROR(cudaMalloc(&gpuOutput, n * m * sizeof(double)));
+    float* gpuInput;
+    float* gpuOutput;
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuInput, n * m * sizeof(float)));
+    CUDA_CHECK_ERROR(cudaMalloc(&gpuOutput, n * m * sizeof(float)));
 
     for (int i = 0; i < n; i++) {
-        CUDA_CHECK_ERROR(cudaMemcpy(gpuInput + i * m, input[i].data(), m * sizeof(double), cudaMemcpyHostToDevice));
+        CUDA_CHECK_ERROR(cudaMemcpy(gpuInput + i * m, input[i].data(), m * sizeof(float), cudaMemcpyHostToDevice));
     }
 
     constexpr int KernelSize = 4;
@@ -31,9 +31,9 @@ std::vector<std::vector<double>> MaxPoolingGpu(std::vector<std::vector<double>> 
     dim3 threads(BlockDimensionSize, BlockDimensionSize);
     MaxPoolingKernel<KernelSize, BlockDimensionSize><<<blocks, threads>>>(gpuInput, gpuOutput, n, m);
 
-    std::vector<std::vector<double>> output(n, std::vector<double>(m));
+    std::vector<std::vector<float>> output(n, std::vector<float>(m));
     for (int i = 0; i < n; i++) {
-        CUDA_CHECK_ERROR(cudaMemcpy(output[i].data(), gpuOutput + i * m, m * sizeof(double), cudaMemcpyDeviceToHost));
+        CUDA_CHECK_ERROR(cudaMemcpy(output[i].data(), gpuOutput + i * m, m * sizeof(float), cudaMemcpyDeviceToHost));
     }
     CUDA_CHECK_ERROR(cudaFree(gpuInput));
     CUDA_CHECK_ERROR(cudaFree(gpuOutput));
@@ -41,15 +41,15 @@ std::vector<std::vector<double>> MaxPoolingGpu(std::vector<std::vector<double>> 
     return output;
 }
 
-std::vector<std::vector<double>> MaxPoolingCpu(std::vector<std::vector<double>> data)
+std::vector<std::vector<float>> MaxPoolingCpu(std::vector<std::vector<float>> data)
 {
     int n = data.size();
     int m = data[0].size();
 
-    std::vector<std::vector<double>> result(n, std::vector<double>(m));
+    std::vector<std::vector<float>> result(n, std::vector<float>(m));
     for (int x = 0; x < n; ++x) {
         for (int y = 0; y < m; ++y) {
-            double& max = result[x][y];
+            float& max = result[x][y];
             for (int dx = 0; dx < 4; dx++) {
                 for (int dy = 0; dy < 4; dy++) {
                     if (x + dx < n && y + dy < m) {
@@ -63,7 +63,7 @@ std::vector<std::vector<double>> MaxPoolingCpu(std::vector<std::vector<double>> 
     return result;
 }
 
-bool DoTest(std::vector<std::vector<double>> data)
+bool DoTest(std::vector<std::vector<float>> data)
 {
     auto gpuResult = MaxPoolingGpu(data);
     auto cpuResult = MaxPoolingCpu(data);
@@ -78,9 +78,9 @@ bool DoTest(std::vector<std::vector<double>> data)
 
 int main()
 {
-    std::vector<std::vector<std::vector<double>>> testValues;
+    std::vector<std::vector<std::vector<float>>> testValues;
     auto addTest = [&] (int n, int m) {
-        std::vector<std::vector<double>> data(n, std::vector<double>(m));
+        std::vector<std::vector<float>> data(n, std::vector<float>(m));
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < m; j++) {
                 data[i][j] = 1.0 * rand() / RAND_MAX;

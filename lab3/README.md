@@ -71,7 +71,7 @@ Let's look what the GPU is doing during the inference. Try to guess what is the 
 
 We can see the lack of pipelining and the GPU doing nothing between the layers. Also, the `LinearLayerKernel` is the most expensive part of the inference.
 
-The first problem can be fixed by using CUDA grpahs just like in the previous lab, we will not do it nothing since it is not too interesting, but you can try if you are interested. Now we will focus on the second problem and instead of optimizing the kernel just like in the previous lab, we will use special library for matrix multiplication called cuBLAS.
+The first problem can be fixed by using CUDA grpahs just like in the previous lab, we will not do it nothing since it is not too interesting, but you can try if want to. Now we will focus on the second problem and instead of optimizing the kernel just like in the previous lab, we will use special library for matrix multiplication called cuBLAS.
 
 ## 03: cuBLAS
 
@@ -126,7 +126,7 @@ Now by analogy implmenet `AddRowMajorMatrix` and `AddColumnMajorMatrix` that rep
 
 Now move on to the `AddReLU` function. It takes a tensor descriptor as an input and returns a tensor descriptor of the result. To implement it, we will `pointwise` method of the `Graph` class. You can about its usage in the [documentation](https://github.com/NVIDIA/cudnn-frontend/blob/main/docs/operations/Pointwise.md). Do not forget to set `compute_data_type` and `data_type` of the resulting tensor since it is used to infer output type.
 
-The final challendge for this task is `AddLinearLayer`. The code creating graph objects for weights and biases tensors is already implemented for you, your task is to implement the computation. Try to figure out which cuDNN operations are needed for the linear layer ans how to use them yourself.
+The final challendge for this task is `AddLinearLayer`. The code creating graph objects for weights and biases tensors is already implemented for you, your task is to implement the computation. Try to figure out which cuDNN operations are needed for the linear layer and how to use them yourself.
 
 When you are ready, compile the code using `make 04` and run the `04` binary. Note, that cuDNN frontend is slow to compile. Also, the graph compilation is slow, so you will have to wait a bit before inference starts. If you are interested in what is cuDNN compiler doing, run the binary with `CUDNN_FRONTEND_LOG_INFO=1 CUDNN_FRONTEND_LOG_FILE=stderr ./04`, you will see how cuDNN tries different heuristics to build optimal kernels. Also, the debug flags may be helpful in case if cuDNN returns errors.
 

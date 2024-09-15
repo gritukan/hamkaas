@@ -6,7 +6,7 @@
 
 __global__ void AddVectors(int n, double* a, double* b, double* c)
 {
-    // Write your code here.
+    // Your code here.
 }
 
 std::vector<double> AddVectorsGpu(std::vector<double> a, std::vector<double> b)

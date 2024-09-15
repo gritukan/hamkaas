@@ -126,7 +126,7 @@ Actually this can be optimized even more by building a better pipeline. Since CP
 
 Pipelining is a common pattern when optimizing GPU (and not only GPU) workloads. When optimizing a chain of different operations it's a good idea to look at the pipeline first and get rid of possible unnessesary barriers before optimizing the operations themselves.
 
-This trick can be even performed with `cudaMemcpy` calls in some cases by using `cudaMemcpyAsync` function. It is a little bit tricky sometimes because may lead to races and we will not use it during our course. However, I recommend you to take a look at it.
+This trick can be even performed with `cudaMemcpy` calls in some cases by using `cudaMemcpyAsync` function. We will look at it later.
 
 Now, when everything look good at system-wise level, let's go deeper and profile the kernel itself. It can be done with the following command. This command may take a while to execute, so you can reduce the number of kernel runs to make it faster.
 
@@ -173,7 +173,7 @@ At first, you can take a look at nice memory workload chat that looks like this.
 
 ![](_imgs/5.png)
 
-It shows how much data was transferred between different levels of memory hierarch and at which speed. That may be useful to understand the cache hit of some kernels, for example.
+It shows how much data was transferred between different levels of memory hierarchy and at which speed. That may be useful to understand the cache hit of some kernels, for example.
 
 Now, move on to the memory workload analysis tables. You can see multiple warnings about the memory access patterns, read them. What is the problem with the kernel?
 <details>

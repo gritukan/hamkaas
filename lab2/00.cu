@@ -40,5 +40,4 @@ int main()
 
         CUDA_CHECK_ERROR(cudaFree(gpuData));
     }
-
 }
