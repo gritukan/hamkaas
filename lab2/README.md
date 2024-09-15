@@ -192,35 +192,36 @@ Also, note that we run every kernel for 3 times. This is not a mistake. The firs
 
 Good job! You have optimized the CUDA kernel by understanding memory hierarchy of the GPU!
 
-## 02: Matrix transposition
+## 02: Thread Divergence
 
-In this task, you will implement a kernel that transposes a matrix efficiently. The code for the task is located in the file `02.cu`.
-
-For the simplicity we will assume that matrix is always of the size $32768 \times 32768$. It is square and its dimesions are divisible by powers of 2, so you can avoid handling some edge cases.
-
-The most trivial kernel is already implemented in the file. Run it and it will report kernel execution duration and throughput. On my NVIDIA H100 GPU the result was about `2.9TB/s`. Let's make it faster!
-
-The first problem should be already familiar to you from the previous problem. Look at the input matrix access pattern. It is not coalesced. Fix it by changing the kernel code.
+Open the file `02.cu`. Look at the `Kernel` kernel and try to understand what it does.
 
 <details>
-<summary> Solution </summary>
-```cpp
-__global__ void TransposeMatrixKernel(int* in, int* out)
-{
-    int x = blockIdx.x * BLOCK_SIZE + threadIdx.x;
-    int baseY = blockIdx.y * BLOCK_SIZE + threadIdx.y;
-
-    constexpr int OFFSET = BLOCK_SIZE / THREAD_SIZE;
-    for (int index = 0; index < BLOCK_SIZE; index += OFFSET) {
-        int y = baseY + index;
-        out[y * SIZE + x] = in[x * SIZE + y];
-    }
-}
-```
+<summary> Answer </summary>
+This kernel performs some convolution-like operation. For every $i$ it adds to $a_i$ the value $\sum_{j = 0}^{N - 1} F(b_{i + j}, c_j)$, where $F(1, x) = x$ and $F(0, x) = -x$.
 </details>
 
-After this fix the throughput should increase. My result was about `3.2TB/s`. Let's run the profiler to see what we can do next. Look at "Memory Workload Analysis" section. We see the issue about the non-coalesced memory access pattern again! Can you spot the problem? Think about the possible fix.
+Let's profile the kernel with `ncu -o 02.prof ./02` and see what can we do here. The first notable thing is that the kernel is compute-bound, compute utilization is almost 100% while memory utilization is quite low. This is not surprising since the kernel does quite a lot of computations and ranges parts of $b$ and $c$ are cached in L1 and L2 (Do not trust me! Check it yourself by running memory profiling).
+
+To find out what are the compute bottlenecks of the kernel, rerun the profiling with `--section ComputeWorkloadAnalysis --section InstructionStats --section WarpStateStats`. You will see a bunch of warnings including the one about the warp divergence. What is the problem with the kernel?
 
 <details>
-<summary> Solution </summary>
-```cpp
+<summary> Answer </summary>
+Remember that threads are grouped in warps and all the threads in a warp can execute only the same instruction at the moment. In our case, there is an `if` in kernel code that makes threads execute different instructions depending on the value of `b[i + j]`. This reduces the performance since during the execution of the kernel instructions `result += c[i];` and `result -= c[i];` are executed sequentially for the warp, not in parallel for different threads.
+</details>
+
+Imagine that we did not find this problem ourselves. Let the profiler help us an rerun the profiling with `--section WarpStateStats` and `--section SourceCounters`. This will be slower but it will make the profiler join the hardware events with the source code, so we can find out which instructions are the reason for the warp divergence.
+
+Open the profile viewer, select any run of the kernel and go to source tab. In case if you are viewing the profile on other host rather than running kernels, you should click on the `Resolve` button and provide `02.cu`. Select `Source` in menu `View` and `Warp Stall Sampling` in `Navigate By`. You will see something like this.
+
+![](_imgs/6.png)
+
+For every line of the source code (and resulting PTX assembly code if needed), profiler provides different statistics, for example information about global or local memory accesses or starts of the divergent branches. It's clear that all the divergences are caused by the `if` statement. Spend some time playing with the `Source` tab to get familiar with it.
+
+How to fix the problem? Rewrite `KernelOpt` to avoid warp divergence. Run the code again and see that code runs faster. Rerun the profiling and see that the warp divergence warning is gone.
+
+<details>
+<summary> Answer </summary>
+`F(p, x)` is actually $(2p - 1) \cdot x$, so you can just replace `if` with `result += (2 * b[i + j] - 1) * c[j];`.
+</details>
+
