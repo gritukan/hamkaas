@@ -76,3 +76,21 @@ The first problem can be fixed by using CUDA grpahs just like in the previous la
 ## 03: cuBLAS Inference
 
 Note, in this task we will continue to work in `02.cu` file, but use `make 03` to build the binary since we need to add `-DUSE_CUBLAS` flag to the compiler.
+
+[cuBLAS](https://developer.nvidia.com/cublas) (CUDA Basic Linear Algebra Subroutines) is a library that provides optimized implementations of many common linear algebra operations including matrix multiplication. It is achieved both by using efficient algorithms and using hardware capabilities of the GPU, for example, tensor cores that are special cores designed for matrix multiplication (you can learn more about them in Hopper architecture [specification](https://resources.nvidia.com/en-us-tensor-core)).
+
+In this task we will rewrite linear layer using cuBLAS.
+
+The routine we need to use is called GEMM (GEneral Matrix Multiplication). For matrices $A$ of size $n \times k$, $B$ of size $k \times m$ and $C$ of size $n \times m$ it implements $C = \alpha A \cdot B + \beta C$ where $\alpha$ and $\beta$ are scalars. Note, that with $\alpha = \beta = 1$ this is exactly the `LinearLayerKernel` function we implemented in the previous task.
+
+Before we move to the implementation let's look at some important details about cuBLAS.
+
+The first (and probably the most annoying) thing is that cuBLAS uses [column-major](https://en.wikipedia.org/wiki/Row-_and_column-major_order) order of elements in matrices while we always used row-major. The reason for this is historical. Back in the distant 1970s, [BLAS](https://en.wikipedia.org/wiki/Basic_Linear_Algebra_Subprograms) library for linear algebra operations was created. In these times the most popular language for scientific computing was Fortran that used column-major order, so BLAS used it also. cuBLAS was created as a GPU-accelerated version of BLAS, so for the sake of compatibility it inherited column-major order.
+
+Two other things are less problematic. The first one is that the way to handle errors in cuBLAS is different from the CUDA, so make sure to wrap all cuBLAS calls into the `CUBLAS_CHECK_ERROR` macro defined in `common.h`. The second one is that cuBLAS library has a context that should be passed to all the cuBLAS calls. Context is created via `cublasCreate` call and destroyed via `cublasDestroy` call. Context is already created and passed to the linear layer so you do not need to worry about it.
+
+Now we can move to the implementation. We will use [cublasGemmEx](https://docs.nvidia.com/cuda/cublas/#cublasgemmex) function. Take a look at the long list of the arguments and try to call it properly. Be careful with `transa` and `transb` arguments, they are assuming column-major order, so the matrix that is transposed in a row-major order is not transposed in a column-major order and vise-versa. You may find useful that $A^T \cdot B^T = (B \cdot A)^T$.
+
+After you finish, run the model inference to check if everything is correct.
+
+Now run the profiling with `nsys` to see what has changed. You should notice that the `LinearLayerKernel` was replaced for cuBLAS kernels that are faster.
