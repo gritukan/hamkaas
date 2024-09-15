@@ -356,7 +356,6 @@ std::vector<std::vector<TNodeBasePtr>> GetSubgraphsToFuse(const std::vector<TNod
     };
 
     auto isPointwise = [&] (TNodeBasePtr node) {
-        //return false;
         // https://github.com/NVIDIA/cudnn-frontend/issues/107, disable broadcasting for now.
         if (dynamic_cast<TSumNode*>(node.get())) {
             return node->GetInputs()[0]->GetShape() == node->GetInputs()[1]->GetShape();

@@ -2,8 +2,6 @@
 
 #include "error.h"
 
-#include <cuda_runtime.h>
-
 #include <cstdlib>
 #include <cstring>
 
@@ -13,20 +11,18 @@ class TCpuDevice
     : public IDevice
 {
 public:
-    void CopyToDevice(void* dest, const void* src, int64_t size) const override
+    void CopyToDevice(void* dest, const void* src, int64_t size, bool /*sync*/) const override
     {
         memcpy(dest, src, size);
     }
 
-    void CopyToHost(void* dest, const void* src, int64_t size) const override
+    void CopyToHost(void* dest, const void* src, int64_t size, bool /*sync*/) const override
     {
         memcpy(dest, src, size);
     }
 
-    void DeviceCopy(char* dest, const char* src, int64_t size) const override
-    {
-        memcpy(dest, src, size);
-    }
+    void Synchronize() const override
+    { }
 
     char* DeviceMalloc(int64_t size) const override
     {
@@ -34,6 +30,16 @@ public:
     }
 
     void DeviceFree(char* ptr) const override
+    {
+        free(ptr);
+    }
+
+    char* HostMalloc(int64_t size) const override
+    {
+        return static_cast<char*>(malloc(size));
+    }
+
+    void HostFree(char* ptr) const override
     {
         free(ptr);
     }
@@ -48,19 +54,29 @@ class TCudaDevice
     : public IDevice
 {
 public:
-    void CopyToDevice(void* dest, const void* src, int64_t size) const override
+    explicit TCudaDevice(cudaStream_t stream)
+        : Stream_(stream)
+    { }
+
+    void CopyToDevice(void* dest, const void* src, int64_t size, bool sync) const override
     {
-        CUDA_CHECK_ERROR(cudaMemcpy(dest, src, size, cudaMemcpyHostToDevice));
+        CUDA_CHECK_ERROR(cudaMemcpyAsync(dest, src, size, cudaMemcpyHostToDevice));
+        if (sync) {
+            Synchronize();
+        }
     }
 
-    void CopyToHost(void* dest, const void* src, int64_t size) const override
+    void CopyToHost(void* dest, const void* src, int64_t size, bool sync) const override
     {
         CUDA_CHECK_ERROR(cudaMemcpy(dest, src, size, cudaMemcpyDeviceToHost));
+        if (sync) {
+            Synchronize();
+        }
     }
 
-    void DeviceCopy(char* dest, const char* src, int64_t size) const override
+    void Synchronize() const override
     {
-        CUDA_CHECK_ERROR(cudaMemcpy(dest, src, size, cudaMemcpyDeviceToDevice));
+        CUDA_ASSERT(cudaStreamSynchronize(Stream_));
     }
 
     char* DeviceMalloc(int64_t size) const override
@@ -71,12 +87,6 @@ public:
             return nullptr;
         }
 
-        error = cudaMemset(ptr, 0, size);
-        if (error != cudaSuccess) {
-            cudaFree(ptr);
-            return nullptr;
-        }
-
         return ptr;
     }
 
@@ -84,11 +94,30 @@ public:
     {
         CUDA_ASSERT(cudaFree(ptr));
     }
+
+    char* HostMalloc(int64_t size) const override
+    {
+        char* ptr;
+        auto error = cudaMallocHost(&ptr, size);
+        if (error != cudaSuccess) {
+            return nullptr;
+        }
+
+        return ptr;
+    }
+
+    void HostFree(char* ptr) const override
+    {
+        CUDA_ASSERT(cudaFreeHost(ptr));
+    }
+
+private:
+    const cudaStream_t Stream_;
 };
 
-std::unique_ptr<IDevice> CreateCudaDevice()
+std::unique_ptr<IDevice> CreateCudaDevice(cudaStream_t stream)
 {
-    return std::make_unique<TCudaDevice>();
+    return std::make_unique<TCudaDevice>(stream);
 }
 
 } // namespace NHamKaas

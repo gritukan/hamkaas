@@ -51,7 +51,8 @@ void TModel::Compile(
 {
     UseGpu_ = options.UseGpu;
     if (UseGpu_) {
-        Device_ = CreateCudaDevice();
+        CUDA_CHECK_ERROR(cudaStreamCreate(&Stream_));
+        Device_ = CreateCudaDevice(Stream_);
     } else {
         Device_ = CreateCpuDevice();
     }
@@ -72,7 +73,6 @@ void TModel::Compile(
 
     // If GPU is used, we precompile a CUDA graph to evaluate it later.
     if (UseGpu_) {
-        CUDA_CHECK_ERROR(cudaStreamCreate(&Stream_));
         CUDA_CHECK_ERROR(cudaStreamBeginCapture(Stream_, cudaStreamCaptureModeGlobal));
 
         for (auto* node : EvaluationOrder_) {
@@ -101,25 +101,11 @@ void TModel::Evaluate(
         }
 
         auto* buffer = inputNode->GetOutput();
-        if (UseGpu_) {
-            CUDA_CHECK_ERROR(cudaMemcpyAsync(buffer, it->second, inputNode->GetOutputSize(), cudaMemcpyHostToDevice, Stream_));
-        } else {
-            std::memcpy(buffer, it->second, inputNode->GetOutputSize());
-        }
-        //Device_->CopyToDevice(buffer, it->second, inputNode->GetOutputSize());
+        Device_->CopyToDevice(buffer, it->second, inputNode->GetOutputSize(), /*sync*/ false);
     }
 
     if (UseGpu_) {
         CUDA_CHECK_ERROR(cudaGraphLaunch(GraphExec_, Stream_));
-        /*
-        for (auto* node : EvaluationOrder_) {
-            node->EvaluateGpu(TEvaluationContext{
-                .Bootstrap = Bootstrap_,
-                .Device = Device_.get(),
-                .Stream = Stream_,
-            });
-        }
-        */
     } else {
         for (auto* node : EvaluationOrder_) {
             node->EvaluateCpu();
