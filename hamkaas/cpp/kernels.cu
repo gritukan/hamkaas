@@ -11,107 +11,160 @@ namespace NHamKaas {
 constexpr int64_t MaxThreadsPerBlock = 256;
 constexpr int64_t MaxBlockCount = 65535;
 
-__global__ void SumTensorsBroadcastKernel(
+template <EPointwiseOperation Operation>
+__device__ void DoPointwise(const float* in, float* out)
+{
+    if constexpr (Operation == EPointwiseOperation::ReLU) {
+        *out = *in > 0 ? *in : 0;
+    } else if constexpr (Operation == EPointwiseOperation::SiLU) {
+        *out = *in / (1 + exp(-*in));
+        out[0] = in[0] / (1 + exp(-in[0]));
+    } else {
+        assert(false);
+    }
+}
+
+template <EPointwiseOperation Operation>
+__device__ void DoPointwise(
     const float* lhs,
     const float* rhs,
-    float* output,
+    float* out)
+{
+    if constexpr (Operation == EPointwiseOperation::Add) {
+        *out = *lhs + *rhs;
+    } else if constexpr (Operation == EPointwiseOperation::HadamardProduct) {
+        *out = *lhs * *rhs;
+    } else if constexpr (Operation == EPointwiseOperation::ComplexHadamardProduct) {
+        out[0] = lhs[0] * rhs[0] - lhs[1] * rhs[1];
+        out[1] = lhs[0] * rhs[1] + lhs[1] * rhs[0];
+    } else {
+        assert(false);
+    }
+}
+
+template <EPointwiseOperation Operation>
+__global__ void PointwiseKernel(
+    const float* lhs,
+    const float* rhs,
+    float* out,
+    int64_t size,
+    int64_t step)
+{
+    for (
+        int64_t index = step * (blockIdx.x * blockDim.x + threadIdx.x);
+        index < size;
+        index += step * gridDim.x * blockDim.x)
+    {
+        if constexpr (IsBinary(Operation)) {
+            DoPointwise<Operation>(lhs + index, rhs + index, out + index);
+        } else {
+            DoPointwise<Operation>(lhs + index, out + index);
+        }
+    }
+}
+
+template <EPointwiseOperation Operation>
+__global__ void PointwiseKernelBroadcast(
+    const float* lhs,
+    const float* rhs,
+    float* out,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
-    int64_t outputSize)
+    int64_t outputSize,
+    int64_t step)
 {
-    int64_t indices[MaxDimensions];
+    int64_t rhsIndices[MaxDimensions];
 
-    int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int64_t lhsIndex = threadIndex; lhsIndex < outputSize; lhsIndex += gridDim.x * blockDim.x) {
+    for (
+        int64_t lhsIndex = step * (blockIdx.x * blockDim.x + threadIdx.x);
+        lhsIndex < outputSize;
+        lhsIndex += step * gridDim.x * blockDim.x)
+    {
         int64_t lhsIndexCopy = lhsIndex;
+        for (int64_t index = dimensions - 1; index >= 0; --index) {
+            rhsIndices[index] = lhsIndexCopy % lhsShape[index];
+            if (rhsIndices[index] >= rhsShape[index]) {
+                rhsIndices[index] = 0;
+            }
 
-        for (int64_t i = dimensions - 1; i >= 0; --i) {
-            indices[i] = lhsIndexCopy % lhsShape[i];
-            lhsIndexCopy /= lhsShape[i];
+            lhsIndexCopy /= lhsShape[index];
         }
 
         int64_t rhsIndex = 0;
-        for (int64_t i = 0; i < dimensions; ++i) {
-            int64_t index = rhsShape[i] == 1 ? 0 : indices[i];
-            rhsIndex = rhsIndex * rhsShape[i] + index;
+        for (int64_t index = 0; index < dimensions; ++index) {
+            rhsIndex = rhsIndex * rhsShape[index] + rhsIndices[index];
         }
 
-        output[lhsIndex] = lhs[lhsIndex] + rhs[rhsIndex];
+        if constexpr (IsBinary(Operation)) {
+            DoPointwise<Operation>(lhs + lhsIndex, rhs + rhsIndex, out + lhsIndex);
+        } else {
+            DoPointwise<Operation>(lhs + lhsIndex, out + lhsIndex);
+        }
     }
 }
 
-void SumTensorsBroadcast(
+template <EPointwiseOperation Operation>
+void Pointwise(
     cudaStream_t stream,
     const float* lhs,
     const float* rhs,
-    float* output,
+    float* out,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
+    bool needBroadcasting,
     int64_t outputSize)
 {
     constexpr int64_t ThreadsPerBlock = 256;
-    int64_t blocks = (outputSize + ThreadsPerBlock - 1) / ThreadsPerBlock;
+
+    int64_t threadCount = outputSize;
+    int64_t step = 1;
+    if constexpr (Operation == EPointwiseOperation::ComplexHadamardProduct) {
+        threadCount /= 2;
+        step = 2;
+    }
+
+    int64_t blocks = (threadCount + ThreadsPerBlock - 1) / ThreadsPerBlock;
     blocks = std::min(blocks, MaxBlockCount);
 
-    SumTensorsBroadcastKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(
-        lhs,
-        rhs,
-        output,
-        lhsShape,
-        rhsShape,
-        dimensions,
-        outputSize);
-}
-
-__global__ void ReLUKernel(
-    const float* input,
-    float* output,
-    int64_t size)
-{
-    int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int64_t index = threadIndex; index < size; index += gridDim.x * blockDim.x) {
-        output[index] = input[index] > 0 ? input[index] : 0;
+    if (needBroadcasting) {
+        PointwiseKernelBroadcast<Operation><<<blocks, ThreadsPerBlock, 0, stream>>>(
+            lhs,
+            rhs,
+            out,
+            lhsShape,
+            rhsShape,
+            dimensions,
+            outputSize,
+            step);
+    } else {
+        PointwiseKernel<Operation><<<blocks, ThreadsPerBlock, 0, stream>>>(
+            lhs,
+            rhs,
+            out,
+            outputSize,
+            step);
     }
 }
 
-void ReLU(
-    cudaStream_t stream,
-    const float* input,
-    float* output,
-    int64_t size)
-{
-    constexpr int64_t ThreadsPerBlock = 256;
-    int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
-    blocks = std::min(blocks, MaxBlockCount);
-
-    ReLUKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(input, output, size);
-}
-
-__global__ void SiLUKernel(
-    const float* input,
-    float* output,
-    int64_t size)
-{
-    int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int64_t index = threadIndex; index < size; index += gridDim.x * blockDim.x) {
-        output[index] = input[index] / (1 + exp(-input[index]));
-    }
-}
-
-void SiLU(
-    cudaStream_t stream,
-    const float* input,
-    float* output,
-    int64_t size)
-{
-    constexpr int64_t ThreadsPerBlock = 256;
-    int64_t blocks = (size + ThreadsPerBlock - 1) / ThreadsPerBlock;
-    blocks = std::min(blocks, MaxBlockCount);
-
-    SiLUKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(input, output, size);
-}
+#define INSTANTIATE_POINTWISE(Operation) \
+    template void Pointwise<Operation>( \
+        cudaStream_t stream, \
+        const float* lhs, \
+        const float* rhs, \
+        float* out, \
+        int64_t* lhsShape, \
+        int64_t* rhsShape, \
+        int64_t dimensions, \
+        bool needBroadcasting, \
+        int64_t outputSize);
+INSTANTIATE_POINTWISE(EPointwiseOperation::Add)
+INSTANTIATE_POINTWISE(EPointwiseOperation::HadamardProduct)
+INSTANTIATE_POINTWISE(EPointwiseOperation::ComplexHadamardProduct)
+INSTANTIATE_POINTWISE(EPointwiseOperation::ReLU)
+INSTANTIATE_POINTWISE(EPointwiseOperation::SiLU)
+#undef INSTANTIATE_POINTWISE
 
 __global__ void RMSNormKernel(
     const float* input,
@@ -163,115 +216,6 @@ void RMSNorm(
 {
     constexpr int64_t ThreadsPerBlock = 256;
     RMSNormKernel<<<1, ThreadsPerBlock, 0, stream>>>(input, weights, output, size, epsilon);
-}
-
-__global__ void ComplexHadamardProductBroadcastKernel(
-    const float* lhs,
-    const float* rhs,
-    float* output,
-    int64_t* lhsShape,
-    int64_t* rhsShape,
-    int64_t dimensions,
-    int64_t outputSize)
-{
-    int64_t indices[MaxDimensions];
-
-    int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int64_t lhsIndex = threadIndex; lhsIndex < outputSize / 2; lhsIndex += gridDim.x * blockDim.x) {
-        int64_t lhsIndexCopy = lhsIndex;
-
-        for (int64_t i = dimensions - 2; i >= 0; --i) {
-            indices[i] = lhsIndexCopy % lhsShape[i];
-            lhsIndexCopy /= lhsShape[i];
-        }
-
-        int64_t rhsIndex = 0;
-        for (int64_t i = 0; i + 1 < dimensions; ++i) {
-            int64_t index = rhsShape[i] == 1 ? 0 : indices[i];
-            rhsIndex = rhsIndex * rhsShape[i] + index;
-        }
-
-        output[2 * lhsIndex] = lhs[2 * lhsIndex] * rhs[2 * rhsIndex] - lhs[2 * lhsIndex + 1] * rhs[2 * rhsIndex + 1];
-        output[2 * lhsIndex + 1] = lhs[2 * lhsIndex] * rhs[2 * rhsIndex + 1] + lhs[2 * lhsIndex + 1] * rhs[2 * rhsIndex];
-    }
-}
-
-void ComplexHadamardProductBroadcast(
-    cudaStream_t stream,
-    const float* lhs,
-    const float* rhs,
-    float* output,
-    int64_t* lhsShape,
-    int64_t* rhsShape,
-    int64_t dimensions,
-    int64_t outputSize)
-{
-    constexpr int64_t ThreadsPerBlock = 256;
-    int64_t blocks = (outputSize / 2 + ThreadsPerBlock - 1) / ThreadsPerBlock;
-    blocks = std::min(blocks, MaxBlockCount);
-
-    ComplexHadamardProductBroadcastKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(
-        lhs,
-        rhs,
-        output,
-        lhsShape,
-        rhsShape,
-        dimensions,
-        outputSize);
-}
-
-__global__ void HadamardProductBroadcastKernel(
-    const float* lhs,
-    const float* rhs,
-    float* output,
-    int64_t* lhsShape,
-    int64_t* rhsShape,
-    int64_t dimensions,
-    int64_t outputSize)
-{
-    int64_t indices[MaxDimensions];
-
-    int64_t threadIndex = blockIdx.x * blockDim.x + threadIdx.x;
-    for (int64_t lhsIndex = threadIndex; lhsIndex < outputSize; lhsIndex += gridDim.x * blockDim.x) {
-        int64_t lhsIndexCopy = lhsIndex;
-
-        for (int64_t i = dimensions - 1; i >= 0; --i) {
-            indices[i] = lhsIndexCopy % lhsShape[i];
-            lhsIndexCopy /= lhsShape[i];
-        }
-
-        int64_t rhsIndex = 0;
-        for (int64_t i = 0; i < dimensions; ++i) {
-            int64_t index = rhsShape[i] == 1 ? 0 : indices[i];
-            rhsIndex = rhsIndex * rhsShape[i] + index;
-        }
-
-        output[lhsIndex] = lhs[lhsIndex] * rhs[rhsIndex];
-    }
-}
-
-void HadamardProductBroadcast(
-    cudaStream_t stream,
-    const float* lhs,
-    const float* rhs,
-    float* output,
-    int64_t* lhsShape,
-    int64_t* rhsShape,
-    int64_t dimensions,
-    int64_t outputSize)
-{
-    constexpr int64_t ThreadsPerBlock = 256;
-    int64_t blocks = (outputSize + ThreadsPerBlock - 1) / ThreadsPerBlock;
-    blocks = std::min(blocks, MaxBlockCount);
-
-    HadamardProductBroadcastKernel<<<blocks, ThreadsPerBlock, 0, stream>>>(
-        lhs,
-        rhs,
-        output,
-        lhsShape,
-        rhsShape,
-        dimensions,
-        outputSize);
 }
 
 __global__ void SoftmaxKernel(

@@ -2,6 +2,7 @@
 
 #include "bootstrap.h"
 #include "device.h"
+#include "helpers.h"
 #include "tensor.h"
 
 #include <string>
@@ -122,11 +123,13 @@ private:
     const std::string Name_;
 };
 
-class TSumNode
+template <EPointwiseOperation Operation>
+class TPointwiseNode
     : public TNodeBase
 {
 public:
-    TSumNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
+    explicit TPointwiseNode(TNodeBasePtr lhs);
+    TPointwiseNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
 
     int64_t GetBufferSize() const override;
     void SetBuffer(char* buffer) override;
@@ -140,7 +143,47 @@ private:
     int64_t* LhsShape_;
     int64_t* RhsShape_;
 
+    bool NeedBroadcasting_ = false;
+
     static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
+
+    void DoEvaluateCpu(const float* lhsPtr, float* outputPtr) const;
+    void DoEvaluateCpu(const float* lhsPtr, const float* rhsPtr, float* outputPtr) const;
+};
+
+class TSumNode
+    : public TPointwiseNode<EPointwiseOperation::Add>
+{
+public:
+    using TPointwiseNode::TPointwiseNode;
+};
+
+class THadamardProductNode
+    : public TPointwiseNode<EPointwiseOperation::HadamardProduct>
+{
+public:
+    using TPointwiseNode::TPointwiseNode;
+};
+
+class TComplexHadamardProductNode
+    : public TPointwiseNode<EPointwiseOperation::ComplexHadamardProduct>
+{
+public:
+    using TPointwiseNode::TPointwiseNode;
+};
+
+class TReLUNode
+    : public TPointwiseNode<EPointwiseOperation::ReLU>
+{
+public:
+    using TPointwiseNode::TPointwiseNode;
+};
+
+class TSiLUNode
+    : public TPointwiseNode<EPointwiseOperation::SiLU>
+{
+public:
+    using TPointwiseNode::TPointwiseNode;
 };
 
 class TMatMulNode
@@ -174,26 +217,6 @@ private:
         int64_t K;
     };
     TParameters GetParameters() const;
-};
-
-class TReLUNode
-    : public TNodeBase
-{
-public:
-    explicit TReLUNode(TNodeBasePtr input);
-
-    void EvaluateCpu() override;
-    void EvaluateGpu(const TEvaluationContext& context) override;
-};
-
-class TSiLUNode
-    : public TNodeBase
-{
-public:
-    explicit TSiLUNode(TNodeBasePtr input);
-
-    void EvaluateCpu() override;
-    void EvaluateGpu(const TEvaluationContext& context) override;
 };
 
 class TSliceNode
@@ -250,48 +273,6 @@ private:
     const std::vector<int64_t> Shape_;
 
     static TTensorMeta CalculateMeta(const TTensorMeta& input, const std::vector<int64_t>& shape);
-};
-
-class TComplexHadamardProductNode
-    : public TNodeBase
-{
-public:
-    TComplexHadamardProductNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
-
-    int64_t GetBufferSize() const override;
-    void SetBuffer(char* buffer) override;
-
-    void Initialize(IDevice* device) override;
-
-    void EvaluateCpu() override;
-    void EvaluateGpu(const TEvaluationContext& context) override;
-
-private:
-    int64_t* LhsShape_;
-    int64_t* RhsShape_;
-
-    static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
-};
-
-class THadamardProductNode
-    : public TNodeBase
-{
-public:
-    THadamardProductNode(TNodeBasePtr lhs, TNodeBasePtr rhs);
-
-    int64_t GetBufferSize() const override;
-    void SetBuffer(char* buffer) override;
-
-    void Initialize(IDevice* device) override;
-
-    void EvaluateCpu() override;
-    void EvaluateGpu(const TEvaluationContext& context) override;
-
-private:
-    int64_t* LhsShape_;
-    int64_t* RhsShape_;
-
-    static TTensorMeta CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs);
 };
 
 class TPermuteNode

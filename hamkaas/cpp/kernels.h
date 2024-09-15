@@ -5,27 +5,17 @@
 
 namespace NHamKaas {
 
-void SumTensorsBroadcast(
+template <EPointwiseOperation Operation>
+void Pointwise(
     cudaStream_t stream,
     const float* lhs,
     const float* rhs,
-    float* output,
+    float* out,
     int64_t* lhsShape,
     int64_t* rhsShape,
     int64_t dimensions,
+    bool needBroadcasting,
     int64_t outputSize);
-
-void ReLU(
-    cudaStream_t stream,
-    const float* input,
-    float* output,
-    int64_t size);
-
-void SiLU(
-    cudaStream_t stream,
-    const float* input,
-    float* output,
-    int64_t size);
 
 void RMSNorm(
     cudaStream_t stream,
@@ -34,26 +24,6 @@ void RMSNorm(
     float* output,
     int64_t size,
     float epsilon);
-
-void ComplexHadamardProductBroadcast(
-    cudaStream_t stream,
-    const float* lhs,
-    const float* rhs,
-    float* output,
-    int64_t* lhsShape,
-    int64_t* rhsShape,
-    int64_t dimensions,
-    int64_t outputSize);
-
-void HadamardProductBroadcast(
-    cudaStream_t stream,
-    const float* lhs,
-    const float* rhs,
-    float* output,
-    int64_t* lhsShape,
-    int64_t* rhsShape,
-    int64_t dimensions,
-    int64_t outputSize);
 
 void SlicedSoftmax(
     cudaStream_t stream,

@@ -172,73 +172,116 @@ void TConstantNode::EvaluateGpu(const TEvaluationContext& /*context*/)
     // Do nothing; buffer is already set by the model evaluator.
 }
 
-TSumNode::TSumNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
-    : TNodeBase(CalculateMeta(lhs->GetMeta(), rhs->GetMeta()), {lhs, rhs})
-{ }
+template <EPointwiseOperation Operation>
+TPointwiseNode<Operation>::TPointwiseNode(TNodeBasePtr lhs)
+    : TNodeBase(lhs->GetMeta(), {lhs})
+{
+    assert(!IsBinary(Operation));
+}
 
-int64_t TSumNode::GetBufferSize() const
+template <EPointwiseOperation Operation>
+TPointwiseNode<Operation>::TPointwiseNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
+    : TNodeBase(CalculateMeta(lhs->GetMeta(), rhs->GetMeta()), {lhs, rhs})
+{
+    assert(IsBinary(Operation));
+
+    NeedBroadcasting_ = lhs->GetShape() != rhs->GetShape();
+}
+
+template <EPointwiseOperation Operation>
+int64_t TPointwiseNode<Operation>::GetBufferSize() const
 {
     return 2 * GetDimensions() * sizeof(int64_t);
 }
 
-void TSumNode::SetBuffer(char* buffer)
+template <EPointwiseOperation Operation>
+void TPointwiseNode<Operation>::SetBuffer(char* buffer)
 {
     LhsShape_ = reinterpret_cast<int64_t*>(buffer);
     RhsShape_ = LhsShape_ + GetDimensions();
 }
 
-void TSumNode::Initialize(IDevice* device)
+template <EPointwiseOperation Operation>
+void TPointwiseNode<Operation>::Initialize(IDevice* device)
 {
     device->CopyToDevice(LhsShape_, Inputs_[0]->GetShape().data(), GetDimensions() * sizeof(int64_t));
-    device->CopyToDevice(RhsShape_, Inputs_[1]->GetShape().data(), GetDimensions() * sizeof(int64_t));
-}
-
-void TSumNode::EvaluateCpu()
-{
-    const auto& lhs = Inputs_[0];
-    const auto& rhs = Inputs_[1];
-
-    auto* lhsPtr = reinterpret_cast<const float*>(lhs->GetOutput());
-    auto* rhsPtr = reinterpret_cast<const float*>(rhs->GetOutput());
-    auto* outputPtr = reinterpret_cast<float*>(GetOutput());
-
-    for (int64_t index = 0; index < lhs->GetElementCount(); ++index) {
-        std::vector<int64_t> rhsIndices(rhs->GetDimensions());
-
-        int64_t indexCopy = index;
-        for (int64_t index = rhs->GetDimensions() - 1; index >= 0; --index) {
-            rhsIndices[index] = indexCopy % lhs->GetShape()[index];
-            indexCopy /= lhs->GetShape()[index];
-            if (rhsIndices[index] >= rhs->GetShape()[index]) {
-                assert(rhs->GetShape()[index] == 1);
-                rhsIndices[index] = 0;
-            }
-        }
-
-        int64_t rhsIndex = 0;
-        for (int64_t index = 0; index < rhs->GetDimensions(); ++index) {
-            rhsIndex = rhsIndex * rhs->GetShape()[index] + rhsIndices[index];
-        }
-
-        outputPtr[index] = lhsPtr[index] + rhsPtr[rhsIndex];
+    if constexpr (IsBinary(Operation)) {
+        device->CopyToDevice(RhsShape_, Inputs_[1]->GetShape().data(), GetDimensions() * sizeof(int64_t));
     }
 }
 
-void TSumNode::EvaluateGpu(const TEvaluationContext& context)
+template <EPointwiseOperation Operation>
+void TPointwiseNode<Operation>::EvaluateCpu()
 {
-    SumTensorsBroadcast(
+    auto* lhsPtr = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
+    const float* rhsPtr = nullptr;
+    if constexpr (IsBinary(Operation)) {
+        rhsPtr = reinterpret_cast<const float*>(Inputs_[1]->GetOutput());
+    }
+
+    auto* outputPtr = reinterpret_cast<float*>(GetOutput());
+
+    std::vector<int64_t> rhsIndices(GetDimensions());
+
+    constexpr int64_t lhsStep = (Operation == EPointwiseOperation::ComplexHadamardProduct) ? 2 : 1;
+
+    for (int64_t lhsIndex = 0; lhsIndex < GetElementCount(); lhsIndex += lhsStep) {
+        int64_t rhsIndex = lhsIndex;
+        if (NeedBroadcasting_) {
+            int64_t indexCopy = lhsIndex;
+            for (int64_t index = GetDimensions() - 1; index >= 0; --index) {
+                rhsIndices[index] = indexCopy % LhsShape_[index];
+                indexCopy /= LhsShape_[index];
+                if (rhsIndices[index] >= RhsShape_[index]) {
+                    assert(RhsShape_[index] == 1);
+                    rhsIndices[index] = 0;
+                }
+            }
+
+            rhsIndex = 0;
+            for (int64_t index = 0; index < GetDimensions(); ++index) {
+                rhsIndex = rhsIndex * RhsShape_[index] + rhsIndices[index];
+            }
+        }
+
+        if constexpr (IsBinary(Operation)) {
+            DoEvaluateCpu(lhsPtr + lhsIndex, rhsPtr + rhsIndex, outputPtr + lhsIndex);
+        } else {
+            DoEvaluateCpu(lhsPtr + lhsIndex, outputPtr + lhsIndex);
+        }
+    }
+}
+
+template <EPointwiseOperation Operation>
+void TPointwiseNode<Operation>::EvaluateGpu(const TEvaluationContext& context)
+{
+    float* lhs = reinterpret_cast<float*>(Inputs_[0]->GetOutput());
+    float* rhs = nullptr;
+    if constexpr (IsBinary(Operation)) {
+        rhs = reinterpret_cast<float*>(Inputs_[1]->GetOutput());
+    }
+    float* output = reinterpret_cast<float*>(GetOutput());
+
+    Pointwise<Operation>(
         context.Stream,
-        reinterpret_cast<const float*>(Inputs_[0]->GetOutput()),
-        reinterpret_cast<const float*>(Inputs_[1]->GetOutput()),
-        reinterpret_cast<float*>(GetOutput()),
+        lhs,
+        rhs,
+        output,
         LhsShape_,
         RhsShape_,
         GetDimensions(),
+        NeedBroadcasting_,
         GetElementCount());
 }
 
-TTensorMeta TSumNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
+template <EPointwiseOperation Operation>
+TTensorMeta TPointwiseNode<Operation>::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
 {
+    assert(IsBinary(Operation));
+
+    const auto& lhsShape = lhs.Shape;
+    const auto& rhsShape = rhs.Shape;
+
     if (lhs.ValueType != rhs.ValueType) {
         THROW("Different value types", VAR(lhs.ValueType), VAR(rhs.ValueType));
     }
@@ -247,18 +290,51 @@ TTensorMeta TSumNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& r
         THROW("Unsupported value type", VAR(lhs.ValueType));
     }
 
-    if (lhs.Shape.size() != rhs.Shape.size()) {
-        THROW("Different number of dimensions", VAR(lhs.Shape.size()), VAR(rhs.Shape.size()));
+    if (lhsShape.size() != rhsShape.size()) {
+        THROW("Different number of dimensions", VAR(lhsShape.size()), VAR(rhsShape.size()));
     }
 
     for (int64_t index = 0; index < lhs.GetDimensions(); ++index) {
-        if (lhs.Shape[index] != rhs.Shape[index] && rhs.Shape[index] != 1) {
-            THROW("Incompatible shapes for sum", VAR(index), VAR(lhs.Shape[index]), VAR(rhs.Shape[index]));
+        if (lhsShape[index] != rhsShape[index] && !(IsBroadcastingSupported(Operation) && rhsShape[index] == 1)) {
+            THROW("Incompatible shapes for pointwise operation", VAR(index), VAR(lhsShape[index]), VAR(rhsShape[index]));
         }
     }
 
     return lhs;
 }
+
+template <EPointwiseOperation Operation>
+void TPointwiseNode<Operation>::DoEvaluateCpu(const float* lhsPtr, float* outputPtr) const
+{
+    if constexpr (Operation == EPointwiseOperation::ReLU) {
+        *outputPtr = std::max<float>(0.0, *lhsPtr);
+    } else if constexpr (Operation == EPointwiseOperation::SiLU) {
+        *outputPtr = *lhsPtr / (1 + exp(-*lhsPtr));
+    } else {
+        assert(false);
+    }
+}
+
+template <EPointwiseOperation Operation>
+void TPointwiseNode<Operation>::DoEvaluateCpu(const float* lhsPtr, const float* rhsPtr, float* outputPtr) const
+{
+    if constexpr (Operation == EPointwiseOperation::Add) {
+        *outputPtr = *lhsPtr + *rhsPtr;
+    } else if constexpr (Operation == EPointwiseOperation::HadamardProduct) {
+        *outputPtr = *lhsPtr * *rhsPtr;
+    } else if constexpr (Operation == EPointwiseOperation::ComplexHadamardProduct) {
+        *outputPtr = *lhsPtr * *rhsPtr - *(lhsPtr + 1) * *(rhsPtr + 1);
+        *(outputPtr + 1) = *lhsPtr * *(rhsPtr + 1) + *(lhsPtr + 1) * *rhsPtr;
+    } else {
+        assert(false);
+    }
+}
+
+template class TPointwiseNode<EPointwiseOperation::Add>;
+template class TPointwiseNode<EPointwiseOperation::HadamardProduct>;
+template class TPointwiseNode<EPointwiseOperation::ComplexHadamardProduct>;
+template class TPointwiseNode<EPointwiseOperation::ReLU>;
+template class TPointwiseNode<EPointwiseOperation::SiLU>;
 
 TMatMulNode::TMatMulNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
     : TNodeBase(CalculateMeta(lhs->GetMeta(), rhs->GetMeta()), {lhs, rhs})
@@ -451,50 +527,6 @@ TMatMulNode::TParameters TMatMulNode::GetParameters() const
     }
 }
 
-TReLUNode::TReLUNode(TNodeBasePtr input)
-    : TNodeBase(input->GetMeta(), {input})
-{ }
-
-void TReLUNode::EvaluateCpu()
-{
-    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
-    auto* output = reinterpret_cast<float*>(GetOutput());
-
-    for (int64_t index = 0; index < Inputs_[0]->GetElementCount(); ++index) {
-        output[index] = std::max<float>(0.0, input[index]);
-    }
-}
-
-void TReLUNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
-    auto* output = reinterpret_cast<float*>(GetOutput());
-
-    ReLU(context.Stream, input, output, Inputs_[0]->GetElementCount());
-}
-
-TSiLUNode::TSiLUNode(TNodeBasePtr input)
-    : TNodeBase(input->GetMeta(), {input})
-{ }
-
-void TSiLUNode::EvaluateCpu()
-{
-    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
-    auto* output = reinterpret_cast<float*>(GetOutput());
-
-    for (int64_t index = 0; index < Inputs_[0]->GetElementCount(); ++index) {
-        output[index] = input[index] / (1 + exp(-input[index]));
-    }
-}
-
-void TSiLUNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    auto* input = reinterpret_cast<const float*>(Inputs_[0]->GetOutput());
-    auto* output = reinterpret_cast<float*>(GetOutput());
-
-    SiLU(context.Stream, input, output, Inputs_[0]->GetElementCount());
-}
-
 TSliceNode::TSliceNode(TNodeBasePtr input, int64_t begin, int64_t end)
     : TNodeBase(CalculateMeta(input->GetMeta(), begin, end), {input})
     , Begin_(begin)
@@ -661,182 +693,6 @@ TTensorMeta TReshapeNode::CalculateMeta(const TTensorMeta& input, const std::vec
         .ValueType = input.ValueType,
         .Shape = shape,
     };
-}
-
-TComplexHadamardProductNode::TComplexHadamardProductNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
-    : TNodeBase(CalculateMeta(lhs->GetMeta(), rhs->GetMeta()), {lhs, rhs})
-{ }
-
-int64_t TComplexHadamardProductNode::GetBufferSize() const
-{
-    return 2 * GetDimensions() * sizeof(int64_t);
-}
-
-void TComplexHadamardProductNode::SetBuffer(char* buffer)
-{
-    LhsShape_ = reinterpret_cast<int64_t*>(buffer);
-    RhsShape_ = LhsShape_ + GetDimensions();
-}
-
-void TComplexHadamardProductNode::Initialize(IDevice* device)
-{
-    device->CopyToDevice(LhsShape_, Inputs_[0]->GetShape().data(), GetDimensions() * sizeof(int64_t));
-    device->CopyToDevice(RhsShape_, Inputs_[1]->GetShape().data(), GetDimensions() * sizeof(int64_t));
-}
-
-void TComplexHadamardProductNode::EvaluateCpu()
-{
-    const auto& lhs = Inputs_[0];
-    const auto& rhs = Inputs_[1];
-
-    auto* lhsPtr = reinterpret_cast<const float*>(lhs->GetOutput());
-    auto* rhsPtr = reinterpret_cast<const float*>(rhs->GetOutput());
-    auto* outputPtr = reinterpret_cast<float*>(GetOutput());
-
-    for (int64_t index = 0; index < lhs->GetElementCount() / 2; ++index) {
-        std::vector<int64_t> rhsIndices(rhs->GetDimensions() - 1);
-
-        int64_t indexCopy = index;
-        for (int64_t index = rhs->GetDimensions() - 2; index >= 0; --index) {
-            rhsIndices[index] = indexCopy % lhs->GetShape()[index];
-            indexCopy /= lhs->GetShape()[index];
-            if (rhsIndices[index] >= rhs->GetShape()[index]) {
-                rhsIndices[index] = 0;
-            }
-        }
-
-        int64_t rhsIndex = 0;
-        for (int64_t index = 0; index < rhs->GetDimensions() - 1; ++index) {
-            rhsIndex = rhsIndex * rhs->GetShape()[index] + rhsIndices[index];
-        }
-
-        outputPtr[2 * index] = lhsPtr[2 * index] * rhsPtr[2 * rhsIndex] - lhsPtr[2 * index + 1] * rhsPtr[2 * rhsIndex + 1];
-        outputPtr[2 * index + 1] = lhsPtr[2 * index] * rhsPtr[2 * rhsIndex + 1] + lhsPtr[2 * index + 1] * rhsPtr[2 * rhsIndex];
-    }
-}
-
-void TComplexHadamardProductNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    ComplexHadamardProductBroadcast(
-        context.Stream,
-        reinterpret_cast<const float*>(Inputs_[0]->GetOutput()),
-        reinterpret_cast<const float*>(Inputs_[1]->GetOutput()),
-        reinterpret_cast<float*>(GetOutput()),
-        LhsShape_,
-        RhsShape_,
-        GetDimensions(),
-        GetElementCount());
-}
-
-TTensorMeta TComplexHadamardProductNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
-{
-    if (lhs.ValueType != rhs.ValueType) {
-        THROW("Different value types", VAR(lhs.ValueType), VAR(rhs.ValueType));
-    }
-
-    if (lhs.ValueType != EValueType::Float32) {
-        THROW("Unsupported value type", VAR(lhs.ValueType));
-    }
-
-    if (lhs.Shape.size() != rhs.Shape.size()) {
-        THROW("Different number of dimensions", VAR(lhs.Shape.size()), VAR(rhs.Shape.size()));
-    }
-
-    if (lhs.Shape.back() != 2 || rhs.Shape.back() != 2) {
-        THROW("Complex Hadamard product is supported for complex tensors only", VAR(lhs.Shape.back()), VAR(rhs.Shape.back()));
-    }
-
-    for (int64_t index = 0; index + 1 < lhs.GetDimensions(); ++index) {
-        if (lhs.Shape[index] != rhs.Shape[index] && rhs.Shape[index] != 1) {
-            THROW("Incompatible shapes for Hadamard product", VAR(index), VAR(lhs.Shape[index]), VAR(rhs.Shape[index]));
-        }
-    }
-
-    return lhs;
-}
-
-THadamardProductNode::THadamardProductNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
-    : TNodeBase(CalculateMeta(lhs->GetMeta(), rhs->GetMeta()), {lhs, rhs})
-{ }
-
-int64_t THadamardProductNode::GetBufferSize() const
-{
-    return 2 * GetDimensions() * sizeof(int64_t);
-}
-
-void THadamardProductNode::SetBuffer(char* buffer)
-{
-    LhsShape_ = reinterpret_cast<int64_t*>(buffer);
-    RhsShape_ = LhsShape_ + GetDimensions();
-}
-
-void THadamardProductNode::Initialize(IDevice* device)
-{
-    device->CopyToDevice(LhsShape_, Inputs_[0]->GetShape().data(), GetDimensions() * sizeof(int64_t));
-    device->CopyToDevice(RhsShape_, Inputs_[1]->GetShape().data(), GetDimensions() * sizeof(int64_t));
-}
-
-void THadamardProductNode::EvaluateCpu()
-{
-    const auto& lhs = Inputs_[0];
-    const auto& rhs = Inputs_[1];
-
-    auto* lhsPtr = reinterpret_cast<const float*>(lhs->GetOutput());
-    auto* rhsPtr = reinterpret_cast<const float*>(rhs->GetOutput());
-    auto* outputPtr = reinterpret_cast<float*>(GetOutput());
-
-    for (int64_t index = 0; index < lhs->GetElementCount(); ++index) {
-        std::vector<int64_t> rhsIndices(rhs->GetDimensions());
-
-        int64_t indexCopy = index;
-        for (int64_t index = rhs->GetDimensions() - 1; index >= 0; --index) {
-            rhsIndices[index] = indexCopy % lhs->GetShape()[index];
-            indexCopy /= lhs->GetShape()[index];
-            if (rhsIndices[index] >= rhs->GetShape()[index]) {
-                assert(rhs->GetShape()[index] == 1);
-                rhsIndices[index] = 0;
-            }
-        }
-
-        int64_t rhsIndex = 0;
-        for (int64_t index = 0; index < rhs->GetDimensions(); ++index) {
-            rhsIndex = rhsIndex * rhs->GetShape()[index] + rhsIndices[index];
-        }
-
-        outputPtr[index] = lhsPtr[index] * rhsPtr[rhsIndex];
-    }
-}
-
-void THadamardProductNode::EvaluateGpu(const TEvaluationContext& context)
-{
-    HadamardProductBroadcast(
-        context.Stream,
-        reinterpret_cast<const float*>(Inputs_[0]->GetOutput()),
-        reinterpret_cast<const float*>(Inputs_[1]->GetOutput()),
-        reinterpret_cast<float*>(GetOutput()),
-        LhsShape_,
-        RhsShape_,
-        GetDimensions(),
-        GetElementCount());
-}
-
-TTensorMeta THadamardProductNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
-{
-    if (lhs.ValueType != rhs.ValueType) {
-        THROW("Different value types", VAR(lhs.ValueType), VAR(rhs.ValueType));
-    }
-
-    if (lhs.Shape.size() != rhs.Shape.size()) {
-        THROW("Different number of dimensions", VAR(lhs.Shape.size()), VAR(rhs.Shape.size()));
-    }
-
-    for (int64_t index = 0; index < lhs.GetDimensions(); ++index) {
-        if (lhs.Shape[index] != rhs.Shape[index] && rhs.Shape[index] != 1) {
-            THROW("Incompatible shapes for Hadamard product", VAR(index), VAR(lhs.Shape[index]), VAR(rhs.Shape[index]));
-        }
-    }
-
-    return lhs;
 }
 
 TPermuteNode::TPermuteNode(TNodeBasePtr input, std::vector<int64_t> permutation)
