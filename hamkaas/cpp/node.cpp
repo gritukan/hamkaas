@@ -48,6 +48,36 @@ int TNodeBase::GetCapacity() const
     return Meta_.GetCapacity();
 }
 
+int64_t TNodeBase::GetBufferSize() const
+{
+    return 0;
+}
+
+int64_t TNodeBase::GetOutputSize() const
+{
+    return GetCapacity();
+}
+
+TNodeBase* TNodeBase::GetOutputOwner() const
+{
+    return const_cast<TNodeBase*>(this);
+}
+
+void TNodeBase::SetBuffer(void* /*buffer*/)
+{
+    // Do nothing.
+}
+
+void TNodeBase::SetOutput(void* output)
+{
+    Output_ = output;
+}
+
+void* TNodeBase::GetOutput() const
+{
+    return Output_;
+}
+
 TInputNode::TInputNode(std::string name, TTensorMeta meta)
     : TNodeBase(std::move(meta))
     , Name_(std::move(name))
@@ -58,36 +88,34 @@ const std::string& TInputNode::GetName() const
     return Name_;
 }
 
-std::vector<char> TInputNode::EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+std::vector<TNodeBase*> TInputNode::GetInputs() const
 {
-    auto inputIt = inputs.find(Name_);
-    if (inputIt == inputs.end()) {
-        THROW("Input not found", VAR(Name_));
-    }
-
-    const auto* input = inputIt->second;
-    std::vector<char> result(GetCapacity());
-
-    memcpy(result.data(), input, GetCapacity());
-
-    return result;
+    return {};
 }
 
-TConstantNode::TConstantNode(TTensorMeta meta, const void* data)
+void TInputNode::EvaluateCpu() const
+{
+    // Do nothing; buffer is already set by the model evaluator.
+}
+
+TConstantNode::TConstantNode(TTensorMeta meta, std::string name)
     : TNodeBase(std::move(meta))
-    , Data_(data)
+    , Name_(std::move(name))
 { }
 
-const void* TConstantNode::GetData() const
+const std::string& TConstantNode::GetName() const
 {
-    return Data_;
+    return Name_;
 }
 
-std::vector<char> TConstantNode::EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+std::vector<TNodeBase*> TConstantNode::GetInputs() const
 {
-    std::vector<char> result(GetCapacity());
-    memcpy(result.data(), Data_, GetCapacity());
-    return result;
+    return {};
+}
+
+void TConstantNode::EvaluateCpu() const
+{
+    // Do nothing; buffer is already set by the model evaluator.
 }
 
 TSumNode::TSumNode(TNodeBasePtr lhs, TNodeBasePtr rhs)
@@ -106,35 +134,40 @@ const TNodeBasePtr& TSumNode::GetRhs() const
     return Rhs_;
 }
 
-std::vector<char> TSumNode::EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+std::vector<TNodeBase*> TSumNode::GetInputs() const
+{
+    return {Lhs_.get(), Rhs_.get()};
+}
+
+void TSumNode::EvaluateCpu() const
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        return DoEvaluateCpu<float>(inputs);
+        DoEvaluateCpu<float>();
+        return;
     case EValueType::Float64:
-        return DoEvaluateCpu<double>(inputs);
+        DoEvaluateCpu<double>();
+        return;
     case EValueType::Int16:
-        return DoEvaluateCpu<int16_t>(inputs);
+        DoEvaluateCpu<int16_t>();
+        return;
     case EValueType::Int32:
-        return DoEvaluateCpu<int32_t>(inputs);
+        DoEvaluateCpu<int32_t>();
+        return;
     case EValueType::Int64:
-        return DoEvaluateCpu<int64_t>(inputs);
+        DoEvaluateCpu<int64_t>();
+        return;
     default:
         THROW("CPU inference does not support this value type", VAR(GetValueType()));
     }
 }
 
 template <class T>
-std::vector<char> TSumNode::DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+void TSumNode::DoEvaluateCpu() const
 {
-    auto lhsResult = Lhs_->EvaluateCpu(inputs);
-    auto rhsResult = Rhs_->EvaluateCpu(inputs);
-
-    const auto* lhs = reinterpret_cast<const T*>(lhsResult.data());
-    const auto* rhs = reinterpret_cast<const T*>(rhsResult.data());
-
-    std::vector<char> resultData(lhsResult.size());
-    auto* result = reinterpret_cast<T*>(resultData.data());
+    auto* lhs = reinterpret_cast<const T*>(Lhs_->GetOutput());
+    auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
+    auto* output = reinterpret_cast<T*>(GetOutput());
 
     for (int index = 0; index < Lhs_->GetElementCount(); ++index) {
         std::vector<int> rhsIndices(Rhs_->GetDimensions());
@@ -154,10 +187,8 @@ std::vector<char> TSumNode::DoEvaluateCpu(const std::unordered_map<std::string, 
             rhsIndex = rhsIndex * Rhs_->GetShape()[index] + rhsIndices[index];
         }
 
-        result[index] = lhs[index] + rhs[rhsIndex];
+        output[index] = lhs[index] + rhs[rhsIndex];
     }
-
-    return resultData;
 }
 
 TTensorMeta TSumNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
@@ -195,6 +226,11 @@ const TNodeBasePtr& TMulNode::GetRhs() const
     return Rhs_;
 }
 
+std::vector<TNodeBase*> TMulNode::GetInputs() const
+{
+    return {Lhs_.get(), Rhs_.get()};
+}
+
 TTensorMeta TMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& rhs)
 {
     if (lhs.ValueType != rhs.ValueType) {
@@ -215,39 +251,39 @@ TTensorMeta TMulNode::CalculateMeta(const TTensorMeta& lhs, const TTensorMeta& r
     };
 }
 
-std::vector<char> TMulNode::EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+void TMulNode::EvaluateCpu() const
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        return DoEvaluateCpu<float>(inputs);
+        DoEvaluateCpu<float>();
+        return;
     case EValueType::Float64:
-        return DoEvaluateCpu<double>(inputs);
+        DoEvaluateCpu<double>();
+        return;
     case EValueType::Int16:
-        return DoEvaluateCpu<int16_t>(inputs);
+        DoEvaluateCpu<int16_t>();
+        return;
     case EValueType::Int32:
-        return DoEvaluateCpu<int32_t>(inputs);
+        DoEvaluateCpu<int32_t>();
+        return;
     case EValueType::Int64:
-        return DoEvaluateCpu<int64_t>(inputs);
+        DoEvaluateCpu<int64_t>();
+        return;
     default:
         THROW("CPU inference does not support this value type", VAR(GetValueType()));
     }
 }
 
 template <class T>
-std::vector<char> TMulNode::DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+void TMulNode::DoEvaluateCpu() const
 {
-    auto lhsResult = Lhs_->EvaluateCpu(inputs);
-    auto rhsResult = Rhs_->EvaluateCpu(inputs);
-
-    const auto* lhs = reinterpret_cast<const T*>(lhsResult.data());
-    const auto* rhs = reinterpret_cast<const T*>(rhsResult.data());
+    auto* lhs = reinterpret_cast<const T*>(Lhs_->GetOutput());
+    auto* rhs = reinterpret_cast<const T*>(Rhs_->GetOutput());
+    auto* output = reinterpret_cast<T*>(GetOutput());
 
     int n = Lhs_->GetShape()[0];
     int k = Lhs_->GetShape()[1];
     int m = Rhs_->GetShape()[1];
-
-    std::vector<char> resultData(n * m * sizeof(T));
-    auto* result = reinterpret_cast<T*>(resultData.data());
 
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < m; ++j) {
@@ -255,11 +291,9 @@ std::vector<char> TMulNode::DoEvaluateCpu(const std::unordered_map<std::string, 
             for (int index = 0; index < k; ++index) {
                 sum += lhs[i * k + index] * rhs[index * m + j];
             }
-            result[i * m + j] = sum;
+            output[i * m + j] = sum;
         }
     }
-
-    return resultData;
 }
 
 TReLUNode::TReLUNode(TNodeBasePtr input)
@@ -272,38 +306,43 @@ const TNodeBasePtr& TReLUNode::GetInput() const
     return Input_;
 }
 
-std::vector<char> TReLUNode::EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+std::vector<TNodeBase*> TReLUNode::GetInputs() const
+{
+    return {Input_.get()};
+}
+
+void TReLUNode::EvaluateCpu() const
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        return DoEvaluateCpu<float>(inputs);
+        DoEvaluateCpu<float>();
+        return;
     case EValueType::Float64:
-        return DoEvaluateCpu<double>(inputs);
+        DoEvaluateCpu<double>();
+        return;
     case EValueType::Int16:
-        return DoEvaluateCpu<int16_t>(inputs);
+        DoEvaluateCpu<int16_t>();
+        return;
     case EValueType::Int32:
-        return DoEvaluateCpu<int32_t>(inputs);
+        DoEvaluateCpu<int32_t>();
+        return;
     case EValueType::Int64:
-        return DoEvaluateCpu<int64_t>(inputs);
+        DoEvaluateCpu<int64_t>();
+        return;
     default:
         THROW("CPU inference does not support this value type", VAR(GetValueType()));
     }
 }
 
 template <class T>
-std::vector<char> TReLUNode::DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+void TReLUNode::DoEvaluateCpu() const
 {
-    auto inputResult = Input_->EvaluateCpu(inputs);
-    const auto* input = reinterpret_cast<const T*>(inputResult.data());
-
-    std::vector<char> resultData(inputResult.size());
-    auto* result = reinterpret_cast<T*>(resultData.data());
+    auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
+    auto* output = reinterpret_cast<T*>(GetOutput());
 
     for (int index = 0; index < Input_->GetElementCount(); ++index) {
-        result[index] = std::max<T>(0.0, input[index]);
+        output[index] = std::max<T>(0.0, input[index]);
     }
-
-    return resultData;
 }
 
 TSiLUNode::TSiLUNode(TNodeBasePtr input)
@@ -316,38 +355,43 @@ const TNodeBasePtr& TSiLUNode::GetInput() const
     return Input_;
 }
 
-std::vector<char> TSiLUNode::EvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+std::vector<TNodeBase*> TSiLUNode::GetInputs() const
+{
+    return {Input_.get()};
+}
+
+void TSiLUNode::EvaluateCpu() const
 {
     switch (GetValueType()) {
     case EValueType::Float32:
-        return DoEvaluateCpu<float>(inputs);
+        DoEvaluateCpu<float>();
+        return;
     case EValueType::Float64:
-        return DoEvaluateCpu<double>(inputs);
+        DoEvaluateCpu<double>();
+        return;
     case EValueType::Int16:
-        return DoEvaluateCpu<int16_t>(inputs);
+        DoEvaluateCpu<int16_t>();
+        return;
     case EValueType::Int32:
-        return DoEvaluateCpu<int32_t>(inputs);
+        DoEvaluateCpu<int32_t>();
+        return;
     case EValueType::Int64:
-        return DoEvaluateCpu<int64_t>(inputs);
+        DoEvaluateCpu<int64_t>();
+        return;
     default:
         THROW("CPU inference does not support this value type", VAR(GetValueType()));
     }
 }
 
 template <class T>
-std::vector<char> TSiLUNode::DoEvaluateCpu(const std::unordered_map<std::string, const void*>& inputs) const
+void TSiLUNode::DoEvaluateCpu() const
 {
-    auto inputResult = Input_->EvaluateCpu(inputs);
-    const auto* input = reinterpret_cast<const T*>(inputResult.data());
-
-    std::vector<char> resultData(inputResult.size());
-    auto* result = reinterpret_cast<T*>(resultData.data());
+    auto* input = reinterpret_cast<const T*>(Input_->GetOutput());
+    auto* output = reinterpret_cast<T*>(GetOutput());
 
     for (int index = 0; index < Input_->GetElementCount(); ++index) {
-        result[index] = input[index] / (1 + exp(-input[index]));
+        output[index] = input[index] / (1 + exp(-input[index]));
     }
-
-    return resultData;
 }
 
 } // namespace NHamKaas

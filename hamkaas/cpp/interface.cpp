@@ -25,14 +25,12 @@ extern "C" TCompilationResult HamKaasCompileModel(
         constants[constantTensors[index].Name] = constantTensors[index].Data;
     }
 
-    NHamKaas::TScript script{
-        .Script = std::string{scriptString},
-        .Constants = std::move(constants),
-    };
+    std::string script(scriptString);
 
     try {
         auto rootNode = NHamKaas::ParseScript(script);
         auto model = new NHamKaas::TModel{std::move(rootNode)};
+        model->Compile(constants);
         return {model, nullptr};
     } catch (const std::exception& e) {
         char* message = strdup(e.what());

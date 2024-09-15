@@ -33,12 +33,12 @@ std::vector<std::string> PreprocessScript(const std::string& script)
     return expressions;
 }
 
-TNodeBasePtr ParseScript(const TScript& script)
+TNodeBasePtr ParseScript(const std::string& script)
 {
     std::unordered_map<int, TNodeBasePtr> nodes;
     std::optional<int> outputNodeIndex;
 
-    for (const auto& expression : PreprocessScript(script.Script)) {
+    for (const auto& expression : PreprocessScript(script)) {
         int ptr = 0;
 
         auto skip = [&] (char c) {
@@ -59,7 +59,7 @@ TNodeBasePtr ParseScript(const TScript& script)
                 THROW("Unexpected end of expression, expected integer", VAR(got, expression[ptr]), VAR(position, ptr));
             }
 
-            int result = 0;
+            int64_t result = 0;
             while (ptr < expression.size() && std::isdigit(expression[ptr])) {
                 result = result * 10 + expression[ptr] - '0';
                 ++ptr;
@@ -124,11 +124,16 @@ TNodeBasePtr ParseScript(const TScript& script)
             }
         };
 
+        auto parseNodeIndex = [&] {
+            skip('$');
+            return parseInt();
+        };
+
         const std::string Result = "result";
         if (expression.substr(0, Result.size()) == Result) {
             ptr += Result.size();
             skip('=');
-            outputNodeIndex = parseInt();
+            outputNodeIndex = parseNodeIndex();
             if (ptr < expression.size()) {
                 THROW("Unexpected symbols after the end of expression", VAR(suffix, expression.substr(ptr)));
             }
@@ -138,7 +143,7 @@ TNodeBasePtr ParseScript(const TScript& script)
 
         TNodeBasePtr node;
 
-        auto nodeIndex = parseInt();
+        auto nodeIndex = parseNodeIndex();
         skip('=');
 
         std::string nodeType;
@@ -162,18 +167,11 @@ TNodeBasePtr ParseScript(const TScript& script)
             auto type = parseValueTypeArg();
             skip(',');
             auto shape = parseIntList();
-
-            auto constantIt = script.Constants.find(name);
-            if (constantIt == script.Constants.end()) {
-                THROW("Constant not found", VAR(name));
-            }
-
-            const auto& constant = constantIt->second;
-            node = std::make_shared<TConstantNode>(TTensorMeta{type, shape}, constant);
+            node = std::make_shared<TConstantNode>(TTensorMeta{type, shape}, name);
         } else if (nodeType == "SumNode") {
-            auto lhs = parseInt();
+            auto lhs = parseNodeIndex();
             skip(',');
-            auto rhs = parseInt();
+            auto rhs = parseNodeIndex();
 
             auto lhsIt = nodes.find(lhs);
             if (lhsIt == nodes.end()) {
@@ -186,9 +184,9 @@ TNodeBasePtr ParseScript(const TScript& script)
 
             node = std::make_shared<TSumNode>(lhsIt->second, rhsIt->second);
         } else if (nodeType == "MulNode") {
-            auto lhs = parseInt();
+            auto lhs = parseNodeIndex();
             skip(',');
-            auto rhs = parseInt();
+            auto rhs = parseNodeIndex();
 
             auto lhsIt = nodes.find(lhs);
             if (lhsIt == nodes.end()) {
@@ -201,7 +199,7 @@ TNodeBasePtr ParseScript(const TScript& script)
 
             node = std::make_shared<TMulNode>(lhsIt->second, rhsIt->second);
         } else if (nodeType == "ReLUNode") {
-            auto input = parseInt();
+            auto input = parseNodeIndex();
 
             auto inputIt = nodes.find(input);
             if (inputIt == nodes.end()) {
@@ -210,7 +208,7 @@ TNodeBasePtr ParseScript(const TScript& script)
 
             node = std::make_shared<TReLUNode>(inputIt->second);
         } else if (nodeType == "SiLUNode") {
-            auto input = parseInt();
+            auto input = parseNodeIndex();
 
             auto inputIt = nodes.find(input);
             if (inputIt == nodes.end()) {

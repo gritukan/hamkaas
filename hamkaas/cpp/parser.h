@@ -7,13 +7,6 @@
 
 namespace NHamKaas {
 
-struct TScript
-{
-    std::string Script;
-
-    std::unordered_map<std::string, const void*> Constants;
-};
-
-TNodeBasePtr ParseScript(const TScript& script);
+TNodeBasePtr ParseScript(const std::string& script);
 
 } // namespace NHamKaas
