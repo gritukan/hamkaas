@@ -72,4 +72,8 @@ int main()
             assert(c[i] == 3 * a[i] + b[i]);
         }
     }
+
+    CUDA_CHECK_ERROR(cudaFree(gpuA));
+    CUDA_CHECK_ERROR(cudaFree(gpuB));
+    CUDA_CHECK_ERROR(cudaFree(gpuC));
 }

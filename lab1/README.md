@@ -40,7 +40,7 @@ At first, it allocates three arrays on the GPU using `cudaMalloc` function. Note
 
 Next, we need to copy data from the host memory to the GPU memory. This is done using `cudaMemcpy` function. It has syntax similar to regular `memcpy` function, but it requires additional arguments to specify the direction of the copy (from host to device or vice versa).
 
-Finally, we are ready to call CUDA kernel. Kernel is simply a function that is executed on the GPU. Since GPU is massively parallel, the kernel is executed on many threads in parallel. `AddVectorsKernel<<<1, a.size()>>>` syntax means that we are going to start `a.size()` threads in a single block (we will talk about blocks later). It worth mentioning that the kernel is executed asynchronously, so the control is returned to the host code immediately after the kernel is launched, it does not wait for all threads to finish. `CUDA_CHECK_KERNEL` macro is used to report an error if the kernel launch failed.
+Finally, we are ready to call CUDA kernel. Kernel is simply a function that is executed on the GPU. Since GPU is massively parallel, the kernel is executed on many threads in parallel. `AddVectorsKernel<<<1, a.size()>>>` syntax means that we are going to start `a.size()` threads in a single block (we will talk about blocks later). It worth mentioning that the kernel is executed asynchronously, so the control is returned to the host code immediately after the kernel is launched, it does not wait for all threads to finish.
 
 After the kernel is executed, we copy the result back to the host memory and free the GPU memory. Note, that memcpy performs synchronization, so there is no race between kernel execution and memory copy. For explicit synchronization, you can use `cudaDeviceSynchronize` function.
 
@@ -53,19 +53,6 @@ make 01-test
 ```
 
 If you see `All tests passed`, great job!
-
-<details>
-<summary> Solution spoiler! </summary>
-
-```cpp
-__global__ void AddVectorsKernel(double* a, double* b, double* c)
-{
-    int index = threadIdx.x;
-    c[index] = a[index] + b[index];
-}
-```
-
-</details>
 
 ## 02: Going 2D!
 
@@ -83,19 +70,6 @@ AddMatricesKernel<<<1, threadsPerBlock>>>(gpuA, gpuB, gpuC, m);
 It makes CUDA to launch `AddMatricesKernel` in $n \times m$ threads in a single block. Threads are organized in a 2D grid in this case. You can access the thread index in each dimension using `threadIdx.x` and `threadIdx.y` variables. Note, that CUDA supports thread arrays of up to 3 dimensions.
 
 Now, implement `AddMatricesKernel` kernel and test in by running `make 02-test` command. If you see `All tests passed`, great job!
-
-<details>
-<summary> Solution spoiler! </summary>
-
-```cpp
-__global__ void AddVectorsKernel(double* a, double* b, double* c)
-{
-    int index = threadIdx.x;
-    c[index] = a[index] + b[index];
-}
-```
-
-</details>
 
 ## 03: Thread Blocks
 
@@ -119,21 +93,6 @@ Now, it's your turn to implement `AddVectors` kernel. You may find useful the bu
 
 When you are done, test your soultion with `make 03-test`. If you see `All tests passed`, great job!
 
-<details>
-<summary> Solution spoiler! </summary>
-
-```cpp
-__global__ void AddVectors(int n, double* a, double* b, double* c)
-{
-    int index = blockDim.x * blockIdx.x + threadIdx.x;
-    if (index < n) {
-        c[index] = a[index] + b[index];
-    }
-}
-```
-
-</details>
-
 ## 04: Shared Memory
 
 In this task you will write a kernel that swaps adjecent elements of a vector using shared memory. The code for this task is located in `04.cu` file.
@@ -148,26 +107,6 @@ For the threads synchronization `__syncthreads()` function is used. It makes all
 
 When you are done, test your solution with `make 04-test`. If you see `All tests passed`, great job!
 
-<details>
-<summary> Solution spoiler! </summary>
-
-```cpp
-__global__ void SwapAdjacentKernel(double* data)
-{
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int localIndex = threadIdx.x;
-
-    __shared__ double buffer[2];
-    buffer[localIndex] = data[index];
-
-    __syncthreads();
-
-    data[index] = buffer[1 - localIndex];
-}
-```
-
-</details>
-
 ## 05: Your First Solo Flight!
 
 In this task, you will implement a [SiLU](https://en.wikipedia.org/wiki/Swish_function) activation function kernel. The code for this task is located in `05.cu` file.
@@ -177,40 +116,6 @@ For this task you will need an exponential function `exp` which is available in 
 Unlike previous tasks, this time `SiLUGpu` is not implemented for you, so you need to implement both kernel and host code. Try not just to copy the code from the previous tasks, but to understand what you are doing.
 
 When you are done, test your solution with `make 05-test`. If you see `All tests passed`, great job!
-
-<details>
-<summary> Solution spoiler! </summary>
-
-```cpp
-__global__ void SiluKernel(double* a, int n)
-{
-    int index = blockDim.x * blockIdx.x + threadIdx.x;
-    if (index < n) {
-        double x = a[index];
-        a[index] = x / (1 + exp(-x));
-    }
-}
-
-std::vector<double> SiLUGpu(std::vector<double> data)
-{
-    double* gpuA;
-    CUDA_CHECK_ERROR(cudaMalloc(&gpuA, data.size() * sizeof(double)));
-    CUDA_CHECK_ERROR(cudaMemcpy(gpuA, data.data(), data.size() * sizeof(double), cudaMemcpyHostToDevice));
-
-    constexpr int MaxThreadsPerBlock = 256;
-    int blocksPerGrid = (data.size() + MaxThreadsPerBlock - 1) / MaxThreadsPerBlock;
-    SiluKernel<<<blocksPerGrid, MaxThreadsPerBlock>>>(gpuA, data.size());
-    CUDA_CHECK_KERNEL();
-
-    std::vector<double> result(data.size());
-    CUDA_CHECK_ERROR(cudaMemcpy(result.data(), gpuA, data.size() * sizeof(double), cudaMemcpyDeviceToHost));
-    CUDA_CHECK_ERROR(cudaFree(gpuA));
-
-    return result;
-}
-```
-
-</details>
 
 ## 06: Max Pooling
 
@@ -225,54 +130,3 @@ Hints:
 * To find $16 \times 16$ submatrix of the output matrix you need a larger (which size?) submatrix of the input matrix. Try to write a code in such a way that each thread does at most $3$ global memory accesses. If you want to add a little bit challenge, try to do it with $2$ accesses.
 
 When you are done, test your solution with `make 06-test`. If you see `All tests passed`, great job!
-
-<details>
-<summary> Solution spoiler! </summary>
-
-```cpp
-template <int KernelSize, int BlockDimensionSize>
-__global__ void MaxPoolingKernel(double* input, double* output, int n, int m)
-{
-    int globalX = blockIdx.x * blockDim.x + threadIdx.x;
-    int globalY = blockIdx.y * blockDim.y + threadIdx.y;
-    if (globalX >= n || globalY >= m) {
-        return;
-    }
-
-    int localX = threadIdx.x;
-    int localY = threadIdx.y;
-
-    __shared__ double buffer[BlockDimensionSize + KernelSize][BlockDimensionSize + KernelSize];
-
-    buffer[localX][localY] = input[globalX * m + globalY];
-
-    bool needExtraX = (globalX + KernelSize < n && localX + KernelSize >= BlockDimensionSize);
-    if (needExtraX) {
-        buffer[localX + KernelSize][localY] = input[(globalX + KernelSize) * m + globalY];
-    }
-
-    bool needExtraY = (globalY + KernelSize < m && localY + KernelSize >= BlockDimensionSize);
-    if (needExtraY) {
-        buffer[localX][localY + KernelSize] = input[globalX * m + (globalY + KernelSize)];
-    }
-
-    if (needExtraX && needExtraY) {
-        buffer[localX + KernelSize][localY + KernelSize] = input[(globalX + KernelSize) * m + (globalY + KernelSize)];
-    }
-
-    __syncthreads();
-
-    double result = 0.0;
-    for (int dx = 0; dx < KernelSize; dx++) {
-        for (int dy = 0; dy < KernelSize; dy++) {
-            if (globalX + dx < n && globalY + dy < m) {
-                result = max(result, buffer[localX + dx][localY + dy]);
-            }
-        }
-    }
-
-    output[globalX * m + globalY] = result;
-}
-```
-
-</details>

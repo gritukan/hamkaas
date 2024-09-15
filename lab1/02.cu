@@ -26,7 +26,6 @@ std::vector<std::vector<double>> AddMatricesGpu(std::vector<std::vector<double>>
 
     dim3 threadsPerBlock(n, m);
     AddMatricesKernel<<<1, threadsPerBlock>>>(gpuA, gpuB, gpuC, m);
-    CUDA_CHECK_KERNEL();
 
     std::vector<std::vector<double>> c(n, std::vector<double>(m));
     for (int i = 0; i < n; i++) {

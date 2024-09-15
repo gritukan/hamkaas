@@ -102,4 +102,6 @@ int main()
     DoSlow(gpuData, N);
     // DoStream(gpuData, N);
     // DoGraph(gpuData, N);
+
+    CUDA_CHECK_ERROR(cudaFree(gpuData));
 }

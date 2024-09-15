@@ -52,6 +52,10 @@ void DoGraph(float* a, float* w, int n)
 
         std::cout << "Graph: time=" << timer.Stop() << "ms" << std::endl;
     }
+
+    CUDA_CHECK_ERROR(cudaGraphExecDestroy(graphExec));
+    CUDA_CHECK_ERROR(cudaGraphDestroy(graph));
+    CUDA_CHECK_ERROR(cudaStreamDestroy(stream));
 }
 
 void DoFused(float* a, float* w, int n)
@@ -87,5 +91,5 @@ int main()
     CUDA_CHECK_ERROR(cudaMemcpy(gpuW, w.data(), N * sizeof(float), cudaMemcpyHostToDevice));
 
     DoGraph(gpuA, gpuW, N);
-    DoFused(gpuA, gpuW, N);
+    // DoFused(gpuA, gpuW, N);
 }

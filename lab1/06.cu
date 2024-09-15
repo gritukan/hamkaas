@@ -30,7 +30,6 @@ std::vector<std::vector<double>> MaxPoolingGpu(std::vector<std::vector<double>> 
     dim3 blocks((n + BlockDimensionSize - 1) / BlockDimensionSize, (m + BlockDimensionSize - 1) / BlockDimensionSize);
     dim3 threads(BlockDimensionSize, BlockDimensionSize);
     MaxPoolingKernel<KernelSize, BlockDimensionSize><<<blocks, threads>>>(gpuInput, gpuOutput, n, m);
-    CUDA_CHECK_KERNEL();
 
     std::vector<std::vector<double>> output(n, std::vector<double>(m));
     for (int i = 0; i < n; i++) {

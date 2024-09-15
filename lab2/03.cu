@@ -52,4 +52,6 @@ int main()
         auto time = timer.Stop();
         std::cout << "N2 time=" << time << "ms" << std::endl;
     }
+
+    CUDA_CHECK_ERROR(cudaFree(gpuA));
 }

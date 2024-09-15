@@ -15,7 +15,6 @@ double AddOneGpu(double x)
     CUDA_CHECK_ERROR(cudaMemcpy(gpuData, &x, sizeof(double), cudaMemcpyHostToDevice));
 
     AddOneKernel<<<1, 1>>>(gpuData);
-    CUDA_CHECK_KERNEL();
 
     double result;
     CUDA_CHECK_ERROR(cudaMemcpy(&result, gpuData, sizeof(double), cudaMemcpyDeviceToHost));

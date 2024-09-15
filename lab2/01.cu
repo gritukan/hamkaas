@@ -83,4 +83,8 @@ int main()
             assert(out[i] == dataA[i] + dataB[i]);
         }
     }
+
+    CUDA_CHECK_ERROR(cudaFree(gpuInA));
+    CUDA_CHECK_ERROR(cudaFree(gpuInB));
+    CUDA_CHECK_ERROR(cudaFree(gpuOut));
 }

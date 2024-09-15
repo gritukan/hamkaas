@@ -8,9 +8,6 @@
         exit(1); \
     }
 
-#define CUDA_CHECK_KERNEL() \
-    CUDA_CHECK_ERROR(cudaPeekAtLastError());
-
 class TCudaEventTimer
 {
 public:

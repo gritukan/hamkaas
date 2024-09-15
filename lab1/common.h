@@ -5,6 +5,3 @@
         fprintf(stderr, "CUDA error in %s:%d: %s\n", __FILE__, __LINE__, cudaGetErrorString(err)); \
         exit(1); \
     }
-
-#define CUDA_CHECK_KERNEL() \
-    CUDA_CHECK_ERROR(cudaPeekAtLastError());

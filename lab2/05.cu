@@ -39,6 +39,10 @@ void DoSlow(int64_t* a, int n)
         CUDA_CHECK_ERROR(cudaMemcpy(&result, a + 1, sizeof(int64_t), cudaMemcpyDeviceToHost));
         assert(result == int64_t(n) * (n + 1) / 2);
     }
+
+    CUDA_CHECK_ERROR(cudaGraphExecDestroy(graphExec));
+    CUDA_CHECK_ERROR(cudaGraphDestroy(graph));
+    CUDA_CHECK_ERROR(cudaStreamDestroy(stream));
 }
 
 void DoFast(int64_t* a, int n)
@@ -64,6 +68,9 @@ void DoFast(int64_t* a, int n)
         CUDA_CHECK_ERROR(cudaMemcpy(&result, a + 1, sizeof(int64_t), cudaMemcpyDeviceToHost));
         assert(result == int64_t(n) * (n + 1) / 2);
     }
+
+    CUDA_CHECK_ERROR(cudaGraphExecDestroy(graphExec));
+    CUDA_CHECK_ERROR(cudaGraphDestroy(graph));
 }
 
 int main()

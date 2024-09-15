@@ -96,4 +96,8 @@ int main()
         auto time = timer.Stop();
         std::cout << "KernelOpt time=" << time << "ms" << std::endl;
     }
+
+    CUDA_CHECK_ERROR(cudaFree(gpuA));
+    CUDA_CHECK_ERROR(cudaFree(gpuB));
+    CUDA_CHECK_ERROR(cudaFree(gpuC));
 }

@@ -29,7 +29,6 @@ std::vector<double> SwapAdjacentGpu(std::vector<double> data)
     CUDA_CHECK_ERROR(cudaMemcpy(gpuData, data.data(), data.size() * sizeof(double), cudaMemcpyHostToDevice));
 
     SwapAdjacentKernel<<<data.size() / 2, 2>>>(gpuData);
-    CUDA_CHECK_KERNEL();
 
     std::vector<double> result(data.size());
     CUDA_CHECK_ERROR(cudaMemcpy(result.data(), gpuData, result.size() * sizeof(double), cudaMemcpyDeviceToHost));

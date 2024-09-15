@@ -22,7 +22,6 @@ std::vector<double> AddVectorsGpu(std::vector<double> a, std::vector<double> b)
     CUDA_CHECK_ERROR(cudaMemcpy(gpuB, b.data(), b.size() * sizeof(double), cudaMemcpyHostToDevice));
 
     AddVectorsKernel<<<1, a.size()>>>(gpuA, gpuB, gpuC);
-    CUDA_CHECK_KERNEL();
 
     std::vector<double> c(a.size());
     CUDA_CHECK_ERROR(cudaMemcpy(c.data(), gpuC, a.size() * sizeof(double), cudaMemcpyDeviceToHost));
