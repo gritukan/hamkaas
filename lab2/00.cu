@@ -5,9 +5,10 @@
 
 __global__ void DoSomethingKernel(double* ptr)
 {
-    for (int i = 0; i < 1e5; i++) {
-        *ptr += 0.2;
-        *ptr = cos(*ptr);
+    double* x = ptr + blockIdx.x * blockDim.x + threadIdx.x;
+    for (int i = 0; i < 1e6; i++) {
+        *x += 0.2;
+        *x = cos(*x);
     }
 }
 

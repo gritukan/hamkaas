@@ -81,3 +81,26 @@ You can unroll CUDA HW section and see that most of the `cudaMemcpy` call time i
 Remove the body of the kernel and run profiling again. Find in the profiler that GPU time is mostly spent on host-to-device and device-to-host memory transfers.
 
 Now, let's profile the kernel. Restore the kernel body and run the following command.
+
+```bash
+ncu --set full -o 00.prof ./00
+```
+
+`--set full` option tells Nsight Compute to collect all the possible metrics. This will allow you to look at all the profiler capabilities, but has a big performance overhead and produces profiles of a big size. In future exercies it's recomended to use more specific metrics. Usually, it's a good idea to start with the basic set of metrics (without providing `--set` option) and then add more metrics if needed.
+
+The command will generate a file `00.prof.ncu-rep` with the profiling results. Let's inspect it with NVIDIA Nsight Compute GUI. Note, that Nsight Compute GUI is a different program than Nsight Systems GUI and one will not open profiles of the other.
+
+Let's explore the profile. On the summary tab you will see all the kernel launches. For each of them name, duration, thread count and other basic metrics are shown.
+
+You can double click on the launch to see detailed information on the details tab. It has different metrics as well as some perfomance improvement advices.
+
+For example, consider the message "Low Utilization" in "Compute Workload Analysis". What does it mean? Why did it happen? How can you fix it?
+
+Fix the problem and rerun the profiling. Compare workload analysis before and after the fix. Did your fix help?
+
+<details>
+<summary> Answer </summary>
+
+Error message means that warps are not fully utilize the compute. This is because we have only one thread per block, so the warp is not full and we do not take advantage of the SIMD processing. To fix it, increase the number of threads per block to, say, 256.
+
+</details>
