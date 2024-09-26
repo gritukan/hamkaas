@@ -16,7 +16,7 @@ You will also need an access to the host with a CUDA-compatible GPU with NVIDIA 
 
 The course consists of series of labs. Technically you can do them in any order (except for the lab 4 and lab 5 because the latter depends on the former), but it is recommended to do them in order.
 
-In case if you got stuck on something, feel free to discuss it in the [Discord channel](https://discord.gg/CuftjcJr). Please do not create GitHub in this case. Use them only for found issues and feature requests.
+In case if you got stuck on something, feel free to discuss it in the [Discord channel](https://discord.gg/68asvG24Y8). Please do not create GitHub in this case. Use them only for found issues and feature requests.
 
 [Lab 1: CUDA Basics](lab1/README.md). In this lab you will learn the basics of CUDA programming and write you first kernels.
 
@@ -54,7 +54,7 @@ However, I think that it is possible to do everything required in this course on
 
 This course is pretty young, so I am open to any suggestions and contributions.
 
-If you have any questions (either about solving lab or a project in general), feel free to ask them in the [Discord channel](https://discord.gg/CuftjcJr).
+If you have any questions (either about solving lab or a project in general), feel free to ask them in the [Discord channel](https://discord.gg/68asvG24Y8).
 
 If you have found a bug, please create an issue (or pull request!) in the repository.
 
