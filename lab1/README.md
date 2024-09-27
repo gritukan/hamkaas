@@ -46,6 +46,8 @@ After the kernel is executed, we copy the result back to the host memory and fre
 
 Now it's your time to implement `AddVectorsKernel`. As being said, this is a function that is executed on the GPU many times in different threads. We want every thread to compute the sum of two elements of the input vectors. To distinguish between threads, you can use `threadIdx.x` variable which is a built-in variable running from `0` to `a.size() - 1` in our case.
 
+Technically, when kernel is being run the function `AddVectorsKernel` will be called for `a.size()` times and each time `threadIdx.x` will be set to a different value. This is how computations are parallelized in CUDA. Given some job, you split it into the number of smaller jobs and write code in such a way that every thread does a small part of the job.
+
 When you are done, run the following command to test your implementation:
 
 ```bash
@@ -66,6 +68,8 @@ For the simplicity of work with 2D and 3D arrays, CUDA supports multidimensional
 dim3 threadsPerBlock(n, m);
 AddMatricesKernel<<<1, threadsPerBlock>>>(gpuA, gpuB, gpuC, m);
 ```
+
+`dim3` here is a structure that is used to store dimensions of arrays. It has a constructor that takes up to 3 arguments representing dimension sizes; unspecified dimensions are set to 1.
 
 It makes CUDA to launch `AddMatricesKernel` in $n \times m$ threads in a single block. Threads are organized in a 2D grid in this case. You can access the thread index in each dimension using `threadIdx.x` and `threadIdx.y` variables. Note, that CUDA supports thread arrays of up to 3 dimensions.
 
@@ -103,7 +107,7 @@ For this problem you will implement a kernel that is launched in $n \over 2$ blo
 
 To allocate a fixed amount of the shared memory `__shared__ double buffer[2];` syntax is used.
 
-For the threads synchronization `__syncthreads()` function is used. It makes all threads in the block to wait until all of them reach the synchronization point.
+For the threads synchronization `__syncthreads()` function is used. It makes all threads in the block to wait until all of them reach the synchronization point. The common pattern of `__syncthreads()` usage is to load some data to the shared memory, synchronize, and then use this data. `__syncthreads()` guarantees that all the block threads will complete the memory load before any of them will start using the data.
 
 When you are done, test your solution with `make 04-test`. If you see `All tests passed`, great job!
 
