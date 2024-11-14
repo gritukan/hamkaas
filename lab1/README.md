@@ -34,19 +34,19 @@ In this task, you will write your first CUDA kernel that sums two vectors of flo
 
 The code for this task is located in `01.cu` file. Let's have a look at what is inside.
 
-The function `AddVectorsGpu` is responsible for GPU vector addition and making it work is our goal for now. `AddVectorsCpu`, `DoTest` and `main` are used for testing and you don't need to modify them. Let's look at the `AddVectorsGpu` function closer.
+The function `AddVectorsGpu` is responsible for GPU vector addition, and making it work is our goal for now. `AddVectorsCpu`, `DoTest` and `main` are used for testing and you don't need to modify them. Let's look at the `AddVectorsGpu` function closer.
 
-At first, it allocates three arrays on the GPU using `cudaMalloc` function. Note, that GPU is a separate device with its own memory, so in order to process data on GPU you have to allocate memory on it. Also, note that all the CUDA calls are wrapped into a `CUDA_CHECK_ERROR` macro. This is because every CUDA call can fail and you should always check if it did. This macro checks for error and prints an error message and fails program if there is one. You can find its implementation in `common.h` header but it is not important for now. You can read more about CUDA error handling in the [official documentation](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__ERROR.html).
+At first, it allocates three arrays on the GPU using `cudaMalloc` function. Note that GPU is a separate device with its own memory, so in order to process data on GPU you have to allocate memory on it. Also, note that all the CUDA calls are wrapped into a `CUDA_CHECK_ERROR` macro. This is because every CUDA call can fail and you should always check if it did. This macro checks for error and prints an error message and fails program if there is one. You can find its implementation in `common.h` header but it is not important for now. You can read more about CUDA error handling in the [official documentation](https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__ERROR.html).
 
 Next, we need to copy data from the host memory to the GPU memory. This is done using `cudaMemcpy` function. It has syntax similar to regular `memcpy` function, but it requires additional arguments to specify the direction of the copy (from host to device or vice versa).
 
-Finally, we are ready to call CUDA kernel. Kernel is simply a function that is executed on the GPU. Since GPU is massively parallel, the kernel is executed on many threads in parallel. `AddVectorsKernel<<<1, a.size()>>>` syntax means that we are going to start `a.size()` threads in a single block (we will talk about blocks later). It worth mentioning that the kernel is executed asynchronously, so the control is returned to the host code immediately after the kernel is launched, it does not wait for all threads to finish.
+Finally, we are ready to call CUDA kernel. Kernel is simply a function that is executed on the GPU. Since GPU is massively parallel, the kernel is executed on many threads in parallel. `AddVectorsKernel<<<1, a.size()>>>` syntax means that we are going to start `a.size()` threads in a single block (we will talk about blocks later). It's worth mentioning that the kernel is executed asynchronously, so the control is returned to the host code immediately after the kernel is launched, it does not wait for all threads to finish.
 
-After the kernel is executed, we copy the result back to the host memory and free the GPU memory. Note, that memcpy performs synchronization, so there is no race between kernel execution and memory copy. For explicit synchronization, you can use `cudaDeviceSynchronize` function.
+After the kernel is executed, we copy the result back to the host memory and free the GPU memory. Note that memcpy performs synchronization, so there is no race between kernel execution and memory copy. For explicit synchronization you can use `cudaDeviceSynchronize` function.
 
 Now it's your time to implement `AddVectorsKernel`. As being said, this is a function that is executed on the GPU many times in different threads. We want every thread to compute the sum of two elements of the input vectors. To distinguish between threads, you can use `threadIdx.x` variable which is a built-in variable running from `0` to `a.size() - 1` in our case.
 
-Technically, when kernel is being run the function `AddVectorsKernel` will be called for `a.size()` times and each time `threadIdx.x` will be set to a different value. This is how computations are parallelized in CUDA. Given some job, you split it into the number of smaller jobs and write code in such a way that every thread does a small part of the job.
+Technically, when kernel is being run the function `AddVectorsKernel` will be called for `a.size()` times and each time `threadIdx.x` will be set to a different value. This is how computations are parallelized in CUDA. Given some job, you split it into a number of smaller jobs and write code in such a way that every thread does a small part of the job.
 
 When you are done, run the following command to test your implementation:
 
@@ -60,7 +60,7 @@ If you see `All tests passed`, great job!
 
 In this task, you will write a kernel that computes the sum of two matrices of the same size. The code for this task is located in `02.cu` file.
 
-The code is quite similar to the vector addition task, but now we have to deal with matrices (i.e. 2D arrays). In CUDA, matrices are usually stored in a [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order), that is a matrix with $N$ rows and $M$ columns is stored as a 1D array of size $n \times m$ where the element $(i, j)$ is stored at the index $i \times m + j$.
+The code is quite similar to the vector addition task, but now we have to deal with matrices (i.e. 2D arrays). In CUDA, matrices are usually stored in a [row-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order), that is, a matrix with $N$ rows and $M$ columns is stored as a 1D array of size $n \times m$ where the element $(i, j)$ is stored at the index $i \times m + j$.
 
 For the simplicity of work with 2D and 3D arrays, CUDA supports multidimensional arrays of threads. Kernel launch code looks like this for our problem:
 
@@ -71,7 +71,7 @@ AddMatricesKernel<<<1, threadsPerBlock>>>(gpuA, gpuB, gpuC, m);
 
 `dim3` here is a structure that is used to store dimensions of arrays. It has a constructor that takes up to 3 arguments representing dimension sizes; unspecified dimensions are set to 1.
 
-It makes CUDA to launch `AddMatricesKernel` in $n \times m$ threads in a single block. Threads are organized in a 2D grid in this case. You can access the thread index in each dimension using `threadIdx.x` and `threadIdx.y` variables. Note, that CUDA supports thread arrays of up to 3 dimensions.
+It makes CUDA to launch `AddMatricesKernel` in $n \times m$ threads in a single block. Threads are organized in a 2D grid in this case. You can access the thread index in each dimension using `threadIdx.x` and `threadIdx.y` variables. Note that CUDA supports thread arrays of up to 3 dimensions.
 
 Now, implement `AddMatricesKernel` kernel and test in by running `make 02-test` command. If you see `All tests passed`, great job!
 
@@ -79,7 +79,7 @@ Now, implement `AddMatricesKernel` kernel and test in by running `make 02-test` 
 
 In this task, you will write a kernel that sums two vectors of the same length again. However, this time you will use multiple blocks of threads to do the job. The code for this task is located in `03.cu` file.
 
-In CUDA, threads are organized in blocks. Threads in the same block can communicate with each other using shared memory. Threads in different blocks are cannot communicate with each other. The number of threads in a block is limited by the hardware and is usually 1024 or less.
+In CUDA, threads are organized in blocks. Threads in the same block can communicate with each other using shared memory. On the other hand, threads in different blocks cannot communicate with each other. The number of threads in a block is limited by the hardware and is usually 1024 or less.
 
 In our case, threads are not communicating with each other, so it may seem that we can just create $n$ blocks with a single thread in each block. However, this is not optimal because it does not utilize GPU fully. We will talk about it in the next lab. For now, we will use 8 threads per block.
 
@@ -91,11 +91,11 @@ int blocksPerGrid = (a.size() + ThreadsPerBlock - 1) / ThreadsPerBlock;
 AddVectors<<<blocksPerGrid, ThreadsPerBlock>>>(a.size(), gpuA, gpuB, gpuC);
 ```
 
-The first argument tells how many blocks of threads should be launched and the second tells how many threads should be in each block. Note, that both of the arguments can be of `dim3` type to arrange block or threads in arrays.
+The first argument tells us how many blocks of threads should be launched and the second tells us how many threads should be in each block. Note that both of the arguments can be of `dim3` type to arrange block or threads in arrays.
 
-Now, it's your turn to implement `AddVectors` kernel. You may find useful the built-in variable `blockDim.x` which contains the number of threads in the block. Note, that in case if the number of elements in the input vectors is not divisible by the number of threads in the block, the total number of threads launched will be greater than the number of elements in the vectors. You should carefully handle such case to avoid out-of-bounds access.
+Now, it's your turn to implement `AddVectors` kernel. You may find useful the built-in variable `blockDim.x` which contains the number of threads in the block. Note that in case if the number of elements in the input vectors is not divisible by the number of threads in the block, the total number of threads launched will be greater than the number of elements in the vectors. You should carefully handle such case to avoid out-of-bounds access.
 
-When you are done, test your soultion with `make 03-test`. If you see `All tests passed`, great job!
+When you are done, test your solution with `make 03-test`. If you see `All tests passed`, great job!
 
 ## 04: Shared Memory
 
@@ -103,11 +103,11 @@ In this task you will write a kernel that swaps adjecent elements of a vector us
 
 Shared memory is a special kind of memory that is shared between threads in the same block. It is much faster than global memory, but it is limited in size (usually 16KB-192KB depending on the particular hardware). Shared memory is used to exchange data between threads in the same block and to reduce the number of global memory accesses.
 
-For this problem you will implement a kernel that is launched in $n \over 2$ blocks with $2$ threads each. For each block, a shared memory buffer of size $2$ is allocated. Kernel for element $i$ firstly store the element $a_i$ into shared memory, then waits for all threads in the block to finish, and after that stores value of the element $a_{i + 1}$ taken from the shared memory to the $a_i$ of the output vector. That is, every thread makes one read from the global memory and one write to the global memory.
+For this problem you will implement a kernel that is launched in $n \over 2$ blocks with $2$ threads each. For each block, a shared memory buffer of size $2$ is allocated. The kernel for element $i$ firstly stores the element $a_i$ into shared memory, then waits for all threads in the block to finish, and after that stores value of the element $a_{i + 1}$ taken from the shared memory to $a_i$ of the output vector. That is, every thread makes one read from the global memory and one write to the global memory.
 
 To allocate a fixed amount of the shared memory `__shared__ double buffer[2];` syntax is used.
 
-For the threads synchronization `__syncthreads()` function is used. It makes all threads in the block to wait until all of them reach the synchronization point. The common pattern of `__syncthreads()` usage is to load some data to the shared memory, synchronize, and then use this data. `__syncthreads()` guarantees that all the block threads will complete the memory load before any of them will start using the data.
+For the threads synchronization `__syncthreads()` function is used. It makes all threads in the block wait until all of them reach the synchronization point. The common pattern of `__syncthreads()` usage is to load some data to the shared memory, synchronize, and then use this data. `__syncthreads()` guarantees that all the block threads complete the memory load before any of them starts using the data.
 
 When you are done, test your solution with `make 04-test`. If you see `All tests passed`, great job!
 
@@ -125,13 +125,13 @@ When you are done, test your solution with `make 05-test`. If you see `All tests
 
 In this task, you will implement a max pooling operation kernel. The code for this task is located in `06.cu` file.
 
-Max pooling is a common operation in convolutional neural networks. You can learn about it [here](https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html). In this problem you will implement a kernel of size $4 \times 4$ and stride 1. Formally, for an input matrix $n \times m$ you need to compute an output matrix of the same size satisfying $out_{i, j}$ be equal to the maximum of the submatrix with corners $(i, j)$ and $(\text{min}(i + 3, n - 1), \text{max}(j + 3, n - 1))$. Refer to `MaxPoolingCpu` for a simple implementation.
+Max pooling is a common operation in convolutional neural networks. You can learn about it [here](https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html). In this problem you will implement a kernel of size $4 \times 4$ and stride 1. Formally, for an input matrix $n \times m$ you need to compute an output matrix of the same size satisfying that $out_{i, j}$ is equal to the maximum of the submatrix with corners $(i, j)$ and $(\text{min}(i + 3, n - 1), \text{max}(j + 3, n - 1))$. Refer to `MaxPoolingCpu` for a simple implementation.
 
 Hints:
 * You may assume that all matrix elements are non-negative, so you can use zero as a negative infinity.
 * Use 256 threads per block with each block processing $16 \times 16$ submatrix.
 * Use shared memory to store the submatrix and then calculate maximums from values in the shared memory.
-* To find $16 \times 16$ submatrix of the output matrix you need a larger (which size?) submatrix of the input matrix. Try to write a code in such a way that each thread does at most $3$ global memory accesses. If you want to add a little bit challenge, try to do it with $2$ accesses.
+* To find $16 \times 16$ submatrix of the output matrix you need a larger (which size?) submatrix of the input matrix. Try to write a code in such a way that each thread does at most $3$ global memory accesses. If you want to add a little bit of challenge, try to do it with $2$ accesses.
 
 When you are done, test your solution with `make 06-test`. If you see `All tests passed`, great job!
 
